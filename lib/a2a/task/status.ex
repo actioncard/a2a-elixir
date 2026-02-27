@@ -10,6 +10,9 @@ defmodule A2A.Task.Status do
           | :completed
           | :canceled
           | :failed
+          | :rejected
+          | :auth_required
+          | :unknown
 
   @type t :: %__MODULE__{
           state: state(),
