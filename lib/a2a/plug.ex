@@ -189,6 +189,7 @@ if Code.ensure_loaded?(Plug) do
       []
       |> maybe_put(:task_id, params["id"])
       |> maybe_put(:context_id, params["contextId"])
+      |> maybe_put(:metadata, params["metadata"])
     end
 
     defp maybe_put(opts, _key, nil), do: opts

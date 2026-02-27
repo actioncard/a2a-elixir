@@ -26,10 +26,10 @@ defmodule A2A.Agent.Runtime do
 
   Creates a new task, transitions through states, and calls `handle_message/2`.
   """
-  @spec process_message(module(), Message.t(), String.t() | nil, State.t()) ::
+  @spec process_message(module(), Message.t(), String.t() | nil, State.t(), map()) ::
           {Task.t(), State.t()}
-  def process_message(module, message, context_id, state) do
-    task = Task.new(context_id: context_id)
+  def process_message(module, message, context_id, state, metadata \\ %{}) do
+    task = Task.new(context_id: context_id, metadata: metadata)
     task = %{task | history: [message]}
     run_task(module, message, task, state)
   end
@@ -74,7 +74,8 @@ defmodule A2A.Agent.Runtime do
     context = %{
       task_id: task.id,
       context_id: task.context_id,
-      history: task.history
+      history: task.history,
+      metadata: task.metadata
     }
 
     task = handle_reply(module.handle_message(message, context), task)

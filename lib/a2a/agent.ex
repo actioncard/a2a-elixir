@@ -152,7 +152,8 @@ defmodule A2A.Agent do
   @type context :: %{
           task_id: String.t(),
           context_id: String.t() | nil,
-          history: [A2A.Message.t()]
+          history: [A2A.Message.t()],
+          metadata: map()
         }
 
   @type reply ::
@@ -278,6 +279,7 @@ defmodule A2A.Agent do
       def handle_call({:message, message, opts}, from, state) do
         task_id = Keyword.get(opts, :task_id)
         context_id = Keyword.get(opts, :context_id)
+        metadata = Keyword.get(opts, :metadata, %{})
 
         case A2A.Agent.Runtime.run_init(__MODULE__, message) do
           {:ok, _extra} ->
@@ -296,7 +298,8 @@ defmodule A2A.Agent do
                    __MODULE__,
                    message,
                    context_id,
-                   state
+                   state,
+                   metadata
                  )}
               end
 
@@ -321,7 +324,8 @@ defmodule A2A.Agent do
             context = %{
               task_id: task.id,
               context_id: task.context_id,
-              history: task.history
+              history: task.history,
+              metadata: task.metadata
             }
 
             case A2A.Agent.Runtime.run_cancel(__MODULE__, context) do
