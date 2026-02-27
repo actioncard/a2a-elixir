@@ -67,6 +67,31 @@ defmodule A2A.Agent do
     when the caller fully consumes the stream
   - `{:error, reason}` — transitions to `:failed`
 
+  ## Reply Parts and Status
+
+  The parts returned from `handle_message/2` serve double duty: they are
+  appended to the task's `history` (as an agent message) **and**, for
+  `{:input_required, parts}`, set as the task's `status.message`.
+
+  These two fields have different audiences:
+
+  - **`history`** — the full conversation transcript, used by agent logic
+    for context on subsequent turns.
+  - **`status.message`** — a short prompt surfaced to the client UI,
+    explaining why the task is paused and what input is needed.
+
+  Because both are populated from the same parts, keep
+  `{:input_required, parts}` **concise and actionable**:
+
+      # Good — short prompt that works as both history entry and status
+      {:input_required, [Part.Text.new("What size pizza?")]}
+
+      # Avoid — long explanation duplicated into status.message
+      {:input_required, [Part.Text.new("Here's our full menu... What size?")]}
+
+  For `{:reply, parts}` and `{:stream, enumerable}`, the parts only go
+  into `history` and `artifacts` — `status.message` is left empty.
+
   ## Multi-Turn Conversations
 
   When an agent returns `{:input_required, parts}`, the task pauses. The
@@ -316,6 +341,10 @@ defmodule A2A.Agent do
 
       def handle_call({:get_task, task_id}, _from, state) do
         {:reply, A2A.Agent.State.get_task(state, task_id), state}
+      end
+
+      def handle_call(:get_agent_card, _from, state) do
+        {:reply, __MODULE__.agent_card(), state}
       end
 
       @impl GenServer
