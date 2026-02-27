@@ -1,0 +1,160 @@
+defmodule A2A.JSONRPC do
+  @moduledoc """
+  Transport-agnostic JSON-RPC 2.0 dispatch layer for the A2A protocol.
+
+  Defines a handler behaviour with three callbacks and a `handle/2` function
+  that parses JSON-RPC envelopes, validates params, and dispatches to the
+  handler module.
+
+  ## Handler behaviour
+
+  Implement the three callbacks to handle A2A methods:
+
+      defmodule MyHandler do
+        @behaviour A2A.JSONRPC
+
+        @impl true
+        def handle_send(message, params) do
+          # process the message, return {:ok, task} or {:error, error}
+        end
+
+        @impl true
+        def handle_get(task_id, params) do
+          # look up the task
+        end
+
+        @impl true
+        def handle_cancel(task_id, params) do
+          # cancel the task
+        end
+      end
+
+  ## Dispatching
+
+      case A2A.JSONRPC.handle(decoded_body, MyHandler) do
+        {:reply, response_map} -> send_json(response_map)
+        {:stream, method, params, id} -> start_sse(method, params, id)
+      end
+  """
+
+  alias A2A.JSONRPC.{Error, Request, Response}
+
+  @type result ::
+          {:reply, map()}
+          | {:stream, String.t(), map(), Request.id()}
+
+  @doc "Called for `message/send` and `message/stream` requests."
+  @callback handle_send(A2A.Message.t(), params :: map()) ::
+              {:ok, A2A.Task.t()} | {:error, Error.t()}
+
+  @doc "Called for `tasks/get` requests."
+  @callback handle_get(task_id :: String.t(), params :: map()) ::
+              {:ok, A2A.Task.t()} | {:error, Error.t()}
+
+  @doc "Called for `tasks/cancel` requests."
+  @callback handle_cancel(task_id :: String.t(), params :: map()) ::
+              {:ok, A2A.Task.t()} | {:error, Error.t()}
+
+  @doc """
+  Parses a JSON-RPC 2.0 request map and dispatches to the handler.
+
+  Returns `{:reply, response_map}` for synchronous methods, or
+  `{:stream, method, params, id}` for streaming methods.
+  """
+  @spec handle(map(), module()) :: result()
+  def handle(raw, handler) do
+    with {:ok, request} <- Request.parse(raw),
+         :ok <- Request.validate_params(request) do
+      dispatch(request, handler)
+    else
+      {:error, %Error{} = error} ->
+        id = extract_id(raw)
+        {:reply, Response.error(id, error)}
+    end
+  end
+
+  # -- dispatch --------------------------------------------------------------
+
+  defp dispatch(%Request{method: "message/send"} = req, handler) do
+    with {:ok, message} <- decode_message(req.params),
+         {:ok, task} <- safe_call(fn -> handler.handle_send(message, req.params) end),
+         {:ok, encoded} <- A2A.JSON.encode(task) do
+      {:reply, Response.success(req.id, encoded)}
+    else
+      {:error, %Error{} = error} -> {:reply, Response.error(req.id, error)}
+    end
+  end
+
+  defp dispatch(%Request{method: "message/stream"} = req, _handler) do
+    case decode_message(req.params) do
+      {:ok, message} ->
+        params = Map.put(req.params, "message", message)
+        {:stream, "message/stream", params, req.id}
+
+      {:error, %Error{} = error} ->
+        {:reply, Response.error(req.id, error)}
+    end
+  end
+
+  defp dispatch(%Request{method: "tasks/get"} = req, handler) do
+    task_id = req.params["id"]
+
+    with {:ok, task} <- safe_call(fn -> handler.handle_get(task_id, req.params) end),
+         {:ok, encoded} <- A2A.JSON.encode(task) do
+      {:reply, Response.success(req.id, encoded)}
+    else
+      {:error, %Error{} = error} -> {:reply, Response.error(req.id, error)}
+    end
+  end
+
+  defp dispatch(%Request{method: "tasks/cancel"} = req, handler) do
+    task_id = req.params["id"]
+
+    with {:ok, task} <- safe_call(fn -> handler.handle_cancel(task_id, req.params) end),
+         {:ok, encoded} <- A2A.JSON.encode(task) do
+      {:reply, Response.success(req.id, encoded)}
+    else
+      {:error, %Error{} = error} -> {:reply, Response.error(req.id, error)}
+    end
+  end
+
+  defp dispatch(%Request{method: "tasks/resubscribe"} = req, _handler) do
+    {:stream, "tasks/resubscribe", req.params, req.id}
+  end
+
+  defp dispatch(%Request{method: "tasks/pushNotificationConfig/" <> _} = req, _handler) do
+    {:reply, Response.error(req.id, Error.push_notification_not_supported())}
+  end
+
+  defp dispatch(
+         %Request{method: "agent/getAuthenticatedExtendedCard"} = req,
+         _handler
+       ) do
+    {:reply, Response.error(req.id, Error.unsupported_operation())}
+  end
+
+  defp dispatch(%Request{} = req, _handler) do
+    {:reply, Response.error(req.id, Error.method_not_found(req.method))}
+  end
+
+  # -- helpers ---------------------------------------------------------------
+
+  defp decode_message(params) do
+    case A2A.JSON.decode(params["message"], :message) do
+      {:ok, _message} = ok -> ok
+      {:error, reason} -> {:error, Error.invalid_params(reason)}
+    end
+  end
+
+  defp safe_call(fun) do
+    case fun.() do
+      {:ok, _} = ok -> ok
+      {:error, %Error{}} = err -> err
+    end
+  rescue
+    e -> {:error, Error.internal_error(Exception.message(e))}
+  end
+
+  defp extract_id(%{"id" => id}) when is_binary(id) or is_integer(id), do: id
+  defp extract_id(_), do: nil
+end
