@@ -35,6 +35,7 @@ defmodule A2A do
 
   - `:context_id` — associate the message with a conversation context
   - `:task_id` — continue an existing task (must be in `:input_required` state)
+  - `:timeout` — GenServer call timeout in ms (default: `60_000`)
 
   ## Examples
 
@@ -54,7 +55,8 @@ defmodule A2A do
   end
 
   def call(agent, %A2A.Message{} = message, opts) do
-    GenServer.call(agent, {:message, message, opts})
+    {timeout, opts} = Keyword.pop(opts, :timeout, 60_000)
+    GenServer.call(agent, {:message, message, opts}, timeout)
   end
 
   @doc """
@@ -62,6 +64,11 @@ defmodule A2A do
 
   The agent's `handle_message/2` must return `{:stream, enumerable}`.
   The returned stream is lazy — the caller must consume it.
+
+  ## Options
+
+  - `:context_id` — associate the message with a conversation context
+  - `:timeout` — GenServer call timeout in ms (default: `60_000`)
 
   ## Examples
 
@@ -78,7 +85,9 @@ defmodule A2A do
   end
 
   def stream(agent, %A2A.Message{} = message, opts) do
-    case GenServer.call(agent, {:message, message, opts}) do
+    {timeout, opts} = Keyword.pop(opts, :timeout, 60_000)
+
+    case GenServer.call(agent, {:message, message, opts}, timeout) do
       {:ok, %A2A.Task{metadata: %{stream: enum}} = task} ->
         {:ok, task, enum}
 

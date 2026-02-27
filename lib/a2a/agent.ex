@@ -196,29 +196,44 @@ defmodule A2A.Agent do
 
       @doc """
       Sends a message to the agent and returns the resulting task.
+
+      ## Options
+
+      - `:timeout` — GenServer call timeout in ms (default: `60_000`)
       """
       @spec call(GenServer.server(), A2A.Message.t(), keyword()) ::
               {:ok, A2A.Task.t()} | {:error, term()}
       def call(server \\ __MODULE__, message, opts \\ []) do
-        GenServer.call(server, {:message, message, opts})
+        {timeout, opts} = Keyword.pop(opts, :timeout, 60_000)
+        GenServer.call(server, {:message, message, opts}, timeout)
       end
 
       @doc """
       Cancels a running task.
+
+      ## Options
+
+      - `:timeout` — GenServer call timeout in ms (default: `60_000`)
       """
-      @spec cancel(GenServer.server(), String.t()) ::
+      @spec cancel(GenServer.server(), String.t(), keyword()) ::
               :ok | {:error, term()}
-      def cancel(server \\ __MODULE__, task_id) do
-        GenServer.call(server, {:cancel, task_id})
+      def cancel(server \\ __MODULE__, task_id, opts \\ []) do
+        {timeout, _opts} = Keyword.pop(opts, :timeout, 60_000)
+        GenServer.call(server, {:cancel, task_id}, timeout)
       end
 
       @doc """
       Retrieves a task by ID.
+
+      ## Options
+
+      - `:timeout` — GenServer call timeout in ms (default: `5_000`)
       """
-      @spec get_task(GenServer.server(), String.t()) ::
+      @spec get_task(GenServer.server(), String.t(), keyword()) ::
               {:ok, A2A.Task.t()} | {:error, :not_found}
-      def get_task(server \\ __MODULE__, task_id) do
-        GenServer.call(server, {:get_task, task_id})
+      def get_task(server \\ __MODULE__, task_id, opts \\ []) do
+        {timeout, _opts} = Keyword.pop(opts, :timeout, 5_000)
+        GenServer.call(server, {:get_task, task_id}, timeout)
       end
 
       # --- GenServer callbacks ---

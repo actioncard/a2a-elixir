@@ -65,6 +65,24 @@ defmodule A2ATest do
     end
   end
 
+  describe "A2A.call/3 timeout" do
+    setup do
+      pid =
+        start_supervised!({A2A.Test.SlowAgent, name: :"slow_#{System.unique_integer()}"})
+
+      %{pid: pid}
+    end
+
+    test "works with explicit :timeout option", %{pid: pid} do
+      assert {:ok, task} = A2A.call(pid, "hello", timeout: 10_000)
+      assert task.status.state == :completed
+    end
+
+    test "raises on too-short timeout", %{pid: pid} do
+      assert catch_exit(A2A.call(pid, "hello", timeout: 1))
+    end
+  end
+
   describe "A2A.stream/3 with non-streaming agent" do
     setup do
       pid = start_supervised!({A2A.Test.EchoAgent, name: :"ns_#{System.unique_integer()}"})
