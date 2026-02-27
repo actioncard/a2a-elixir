@@ -809,8 +809,8 @@ Agents are registered in the internal registry on start. Supervised with restart
 | 2     | Done    | Wire protocol spec — document JSON schemas, JSON-RPC, SSE, error codes |
 | 3     | Done    | JSON codec (`A2A.JSON`) — Elixir structs ↔ camelCase JSON         |
 | 4     | Done    | JSON-RPC layer — request/response parsing, method dispatch, error types |
-| 5     | Next    | HTTP server (`A2A.Plug`) — agent card endpoint, JSON-RPC POST, SSE |
-| 6     | —       | HTTP client (`A2A.Client`) — discover, send_message, stream via Req |
+| 5     | Done    | HTTP server (`A2A.Plug`) — agent card endpoint, JSON-RPC POST, SSE |
+| 6     | Next    | HTTP client (`A2A.Client`) — discover, send_message, stream via Req |
 | 7     | —       | Registry + Supervisor — agent discovery, supervised startup        |
 | 8     | —       | `{:delegate, agent, msg}` — agent-to-agent forwarding             |
 
