@@ -83,6 +83,39 @@ defmodule A2ATest do
     end
   end
 
+  describe "A2A.get_agent_card/2" do
+    setup do
+      pid =
+        start_supervised!({A2A.Test.EchoAgent, name: :"card_#{System.unique_integer()}"})
+
+      %{pid: pid}
+    end
+
+    test "returns encoded card map with base_url", %{pid: pid} do
+      card = A2A.get_agent_card(pid, base_url: "https://example.com/a2a")
+
+      assert card["name"] == "echo"
+      assert card["url"] == "https://example.com/a2a"
+      assert is_list(card["skills"])
+    end
+
+    test "forwards extra opts to encode_agent_card", %{pid: pid} do
+      card =
+        A2A.get_agent_card(pid,
+          base_url: "https://example.com",
+          capabilities: %{streaming: true}
+        )
+
+      assert card["capabilities"]["streaming"] == true
+    end
+
+    test "raises without base_url" do
+      assert_raise KeyError, ~r/:base_url/, fn ->
+        A2A.get_agent_card(self(), [])
+      end
+    end
+  end
+
   describe "A2A.stream/3 with non-streaming agent" do
     setup do
       pid = start_supervised!({A2A.Test.EchoAgent, name: :"ns_#{System.unique_integer()}"})

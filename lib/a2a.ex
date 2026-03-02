@@ -26,6 +26,31 @@ defmodule A2A do
   """
 
   @doc """
+  Returns the encoded agent card for a local agent.
+
+  Fetches the card via GenServer and encodes it using
+  `A2A.JSON.encode_agent_card/2`. This is useful for serving agent
+  cards from custom endpoints (e.g., a Phoenix controller) when you
+  set `agent_card_path: false` on `A2A.Plug`.
+
+  ## Options
+
+  - `:base_url` — the public URL of the agent endpoint (required)
+  - All other options are forwarded to `A2A.JSON.encode_agent_card/2`
+
+  ## Examples
+
+      A2A.get_agent_card(MyAgent, base_url: "https://example.com/a2a")
+      # => %{"name" => ..., "url" => "https://example.com/a2a", ...}
+  """
+  @spec get_agent_card(GenServer.server(), keyword()) :: map()
+  def get_agent_card(agent, opts) do
+    {base_url, encode_opts} = Keyword.pop!(opts, :base_url)
+    card = GenServer.call(agent, :get_agent_card)
+    A2A.JSON.encode_agent_card(card, [{:url, base_url} | encode_opts])
+  end
+
+  @doc """
   Sends a message to a local agent and returns the resulting task.
 
   The `agent` can be a module name (registered GenServer) or a PID.

@@ -102,6 +102,41 @@ defmodule A2A.Plug.SSETest do
     end
   end
 
+  describe "metadata in stream" do
+    test "init metadata flows through to streamed task", %{agent: agent} do
+      opts =
+        A2A.Plug.init(
+          agent: agent,
+          base_url: "http://localhost:4000",
+          metadata: %{"env" => "prod"}
+        )
+
+      params =
+        message_params()
+        |> Map.put("metadata", %{"request_key" => "val"})
+
+      body =
+        Jason.encode!(%{
+          "jsonrpc" => "2.0",
+          "id" => 1,
+          "method" => "message/stream",
+          "params" => params
+        })
+
+      conn =
+        Plug.Test.conn(:post, "/", body)
+        |> Plug.Conn.put_req_header("content-type", "application/json")
+        |> A2A.Plug.put_metadata(%{"tenant_id" => "t-1"})
+        |> A2A.Plug.call(opts)
+
+      [first | _] = parse_sse_events(conn)
+      task_meta = first["result"]["metadata"]
+      assert task_meta["env"] == "prod"
+      assert task_meta["tenant_id"] == "t-1"
+      assert task_meta["request_key"] == "val"
+    end
+  end
+
   describe "stream error handling" do
     test "non-streaming agent returns JSON-RPC error" do
       agent = start_supervised!({A2A.Test.ErrorAgent, [name: nil]})

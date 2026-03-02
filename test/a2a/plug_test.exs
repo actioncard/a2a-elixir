@@ -265,6 +265,160 @@ defmodule A2A.PlugTest do
     end
   end
 
+  # -- put_base_url/2 overrides ------------------------------------------------
+
+  describe "put_base_url/2" do
+    test "overrides init base_url in agent card", %{agent: agent} do
+      conn =
+        Plug.Test.conn(:get, "/.well-known/agent-card.json")
+        |> A2A.Plug.put_base_url("https://tenant.example.com/a2a")
+        |> A2A.Plug.call(plug_opts(agent))
+
+      assert conn.status == 200
+      assert json_body(conn)["url"] == "https://tenant.example.com/a2a"
+    end
+
+    test "get_base_url/1 returns stored value" do
+      conn =
+        Plug.Test.conn(:get, "/")
+        |> A2A.Plug.put_base_url("https://example.com")
+
+      assert A2A.Plug.get_base_url(conn) == "https://example.com"
+    end
+
+    test "get_base_url/1 returns nil when not set" do
+      conn = Plug.Test.conn(:get, "/")
+      assert A2A.Plug.get_base_url(conn) == nil
+    end
+  end
+
+  # -- put_metadata/2 overrides -----------------------------------------------
+
+  describe "put_metadata/2" do
+    test "init metadata flows to task", %{agent: agent} do
+      opts =
+        A2A.Plug.init(
+          agent: agent,
+          base_url: "http://localhost:4000",
+          metadata: %{"env" => "prod"}
+        )
+
+      conn =
+        json_rpc_conn("message/send", message_params())
+        |> A2A.Plug.call(opts)
+
+      body = json_body(conn)
+      assert body["result"]["metadata"]["env"] == "prod"
+    end
+
+    test "conn metadata overrides init metadata", %{agent: agent} do
+      opts =
+        A2A.Plug.init(
+          agent: agent,
+          base_url: "http://localhost:4000",
+          metadata: %{"env" => "prod", "region" => "us"}
+        )
+
+      conn =
+        json_rpc_conn("message/send", message_params())
+        |> A2A.Plug.put_metadata(%{"env" => "staging", "tenant_id" => "t-1"})
+        |> A2A.Plug.call(opts)
+
+      body = json_body(conn)
+      meta = body["result"]["metadata"]
+      assert meta["env"] == "staging"
+      assert meta["region"] == "us"
+      assert meta["tenant_id"] == "t-1"
+    end
+
+    test "request metadata overrides conn metadata", %{agent: agent} do
+      opts =
+        A2A.Plug.init(
+          agent: agent,
+          base_url: "http://localhost:4000",
+          metadata: %{"env" => "prod"}
+        )
+
+      params =
+        message_params()
+        |> Map.put("metadata", %{"env" => "test", "request_key" => "val"})
+
+      conn =
+        json_rpc_conn("message/send", params)
+        |> A2A.Plug.put_metadata(%{"tenant_id" => "t-1"})
+        |> A2A.Plug.call(opts)
+
+      body = json_body(conn)
+      meta = body["result"]["metadata"]
+      # 3-layer merge: init("prod") → conn("t-1") → request("test")
+      assert meta["env"] == "test"
+      assert meta["tenant_id"] == "t-1"
+      assert meta["request_key"] == "val"
+    end
+
+    test "get_metadata/1 returns stored value" do
+      conn =
+        Plug.Test.conn(:get, "/")
+        |> A2A.Plug.put_metadata(%{"key" => "val"})
+
+      assert A2A.Plug.get_metadata(conn) == %{"key" => "val"}
+    end
+
+    test "get_metadata/1 returns nil when not set" do
+      conn = Plug.Test.conn(:get, "/")
+      assert A2A.Plug.get_metadata(conn) == nil
+    end
+  end
+
+  # -- agent_card_path: false --------------------------------------------------
+
+  describe "agent_card_path: false" do
+    test "GET to default agent card path returns 404", %{agent: agent} do
+      opts = plug_opts(agent, agent_card_path: false)
+
+      conn =
+        Plug.Test.conn(:get, "/.well-known/agent-card.json")
+        |> A2A.Plug.call(opts)
+
+      assert conn.status == 404
+    end
+
+    test "JSON-RPC still works", %{agent: agent} do
+      opts = plug_opts(agent, agent_card_path: false)
+
+      conn =
+        json_rpc_conn("message/send", message_params())
+        |> A2A.Plug.call(opts)
+
+      assert conn.status == 200
+      assert json_body(conn)["result"]["kind"] == "task"
+    end
+  end
+
+  # -- Missing base_url --------------------------------------------------------
+
+  describe "missing base_url" do
+    test "raises ArgumentError on agent card GET", %{agent: agent} do
+      opts = A2A.Plug.init(agent: agent)
+
+      assert_raise ArgumentError, ~r/base_url/, fn ->
+        Plug.Test.conn(:get, "/.well-known/agent-card.json")
+        |> A2A.Plug.call(opts)
+      end
+    end
+
+    test "JSON-RPC works without base_url", %{agent: agent} do
+      opts = A2A.Plug.init(agent: agent)
+
+      conn =
+        json_rpc_conn("message/send", message_params())
+        |> A2A.Plug.call(opts)
+
+      assert conn.status == 200
+      assert json_body(conn)["result"]["kind"] == "task"
+    end
+  end
+
   defp get_resp_header(conn, key) do
     for {k, v} <- conn.resp_headers, k == key, do: v
   end

@@ -12,11 +12,19 @@ if Code.ensure_loaded?(Plug) do
     Calls `A2A.stream/3` on the agent, then sends each part as an
     `ArtifactUpdate` SSE event and finishes with a `StatusUpdate`
     event where `final: true`.
+
+    The optional `call_opts` are forwarded to `A2A.stream/3` so that
+    metadata, task_id, and context_id reach the agent.
     """
-    @spec stream_message(Plug.Conn.t(), GenServer.server(), A2A.Message.t(), term()) ::
-            Plug.Conn.t()
-    def stream_message(conn, agent, message, jsonrpc_id) do
-      case A2A.stream(agent, message) do
+    @spec stream_message(
+            Plug.Conn.t(),
+            GenServer.server(),
+            A2A.Message.t(),
+            term(),
+            keyword()
+          ) :: Plug.Conn.t()
+    def stream_message(conn, agent, message, jsonrpc_id, call_opts \\ []) do
+      case A2A.stream(agent, message, call_opts) do
         {:ok, task, enum} ->
           conn = start_sse(conn)
           conn = send_task_snapshot(conn, jsonrpc_id, task)
