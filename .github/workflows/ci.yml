@@ -158,7 +158,7 @@ jobs:
       - name: Install TCK dependencies
         run: |
           cd .tck
-          uv venv
+          uv venv --clear
           uv pip install -e .
 
       - name: Run TCK (mandatory)
