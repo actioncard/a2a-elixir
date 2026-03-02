@@ -100,7 +100,7 @@ defmodule A2A.JSONRPC do
   defp dispatch(%Request{method: "message/send"} = req, handler) do
     with {:ok, message} <- decode_message(req.params),
          {:ok, task} <- safe_call(fn -> handler.handle_send(message, req.params) end),
-         {:ok, encoded} <- A2A.JSON.encode(strip_stream_metadata(task)) do
+         {:ok, encoded} <- A2A.JSON.encode(A2A.Task.strip_stream_metadata(task)) do
       {:reply, Response.success(req.id, %{"task" => encoded})}
     else
       {:error, %Error{} = error} -> {:reply, Response.error(req.id, error)}
@@ -123,7 +123,10 @@ defmodule A2A.JSONRPC do
     history_length = req.params["historyLength"]
 
     with {:ok, task} <- safe_call(fn -> handler.handle_get(task_id, req.params) end),
-         task = task |> maybe_truncate_history(history_length) |> strip_stream_metadata(),
+         task =
+           task
+           |> A2A.Task.truncate_history(history_length)
+           |> A2A.Task.strip_stream_metadata(),
          {:ok, encoded} <- A2A.JSON.encode(task) do
       {:reply, Response.success(req.id, encoded)}
     else
@@ -135,7 +138,7 @@ defmodule A2A.JSONRPC do
     task_id = req.params["id"]
 
     with {:ok, task} <- safe_call(fn -> handler.handle_cancel(task_id, req.params) end),
-         {:ok, encoded} <- A2A.JSON.encode(strip_stream_metadata(task)) do
+         {:ok, encoded} <- A2A.JSON.encode(A2A.Task.strip_stream_metadata(task)) do
       {:reply, Response.success(req.id, encoded)}
     else
       {:error, %Error{} = error} -> {:reply, Response.error(req.id, error)}
@@ -190,15 +193,6 @@ defmodule A2A.JSONRPC do
     e -> {:error, Error.internal_error(Exception.message(e))}
   end
 
-  defp maybe_truncate_history(task, nil), do: task
-  defp maybe_truncate_history(task, 0), do: %{task | history: []}
-
-  defp maybe_truncate_history(task, n) when is_integer(n) and n > 0 do
-    %{task | history: Enum.take(task.history, -n)}
-  end
-
-  defp maybe_truncate_history(task, _), do: task
-
   defp normalize_method(%Request{method: method} = request) do
     case Map.get(@method_aliases, method) do
       nil -> request
@@ -208,12 +202,4 @@ defmodule A2A.JSONRPC do
 
   defp extract_id(%{"id" => id}) when is_binary(id) or is_integer(id), do: id
   defp extract_id(_), do: nil
-
-  # The :stream key in task metadata holds a raw enumerable/function ref
-  # used by the SSE path. Strip it before JSON encoding to avoid crashes.
-  defp strip_stream_metadata(%{metadata: metadata} = task) do
-    %{task | metadata: Map.delete(metadata, :stream)}
-  end
-
-  defp strip_stream_metadata(task), do: task
 end
