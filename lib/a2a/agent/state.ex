@@ -213,10 +213,11 @@ defmodule A2A.Agent.State do
   end
 
   defp encode_list_result({:ok, %{tasks: tasks} = result}) do
-    encoded_tasks = Enum.map(tasks, fn task ->
-      {:ok, encoded} = A2A.JSON.encode(task)
-      encoded
-    end)
+    encoded_tasks =
+      Enum.map(tasks, fn task ->
+        {:ok, encoded} = task |> strip_stream_metadata() |> A2A.JSON.encode()
+        encoded
+      end)
 
     {:ok,
      %{
@@ -228,4 +229,10 @@ defmodule A2A.Agent.State do
   end
 
   defp encode_list_result(error), do: error
+
+  defp strip_stream_metadata(%{metadata: metadata} = task) do
+    %{task | metadata: Map.delete(metadata, :stream)}
+  end
+
+  defp strip_stream_metadata(task), do: task
 end

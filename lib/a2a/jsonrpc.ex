@@ -123,7 +123,7 @@ defmodule A2A.JSONRPC do
     history_length = req.params["historyLength"]
 
     with {:ok, task} <- safe_call(fn -> handler.handle_get(task_id, req.params) end),
-         task = maybe_truncate_history(task, history_length),
+         task = task |> maybe_truncate_history(history_length) |> strip_stream_metadata(),
          {:ok, encoded} <- A2A.JSON.encode(task) do
       {:reply, Response.success(req.id, encoded)}
     else
@@ -135,7 +135,7 @@ defmodule A2A.JSONRPC do
     task_id = req.params["id"]
 
     with {:ok, task} <- safe_call(fn -> handler.handle_cancel(task_id, req.params) end),
-         {:ok, encoded} <- A2A.JSON.encode(task) do
+         {:ok, encoded} <- A2A.JSON.encode(strip_stream_metadata(task)) do
       {:reply, Response.success(req.id, encoded)}
     else
       {:error, %Error{} = error} -> {:reply, Response.error(req.id, error)}
