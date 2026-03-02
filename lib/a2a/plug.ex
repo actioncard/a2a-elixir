@@ -310,8 +310,14 @@ if Code.ensure_loaded?(Plug) do
       agent = Process.get(:a2a_plug_agent)
 
       case GenServer.call(agent, {:list_tasks, params}) do
-        {:ok, result} -> {:ok, result}
-        {:error, reason} -> {:error, Error.internal_error(inspect(reason))}
+        {:ok, result} ->
+          {:ok, result}
+
+        {:error, :invalid_page_token} ->
+          {:error, Error.invalid_params("\"pageToken\" is invalid")}
+
+        {:error, reason} ->
+          {:error, Error.internal_error(inspect(reason))}
       end
     end
 
