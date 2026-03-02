@@ -38,16 +38,17 @@ defmodule A2A.Agent.Runtime do
   Continues an existing task with a new message.
 
   Appends the message to the task's history and re-runs `handle_message/2`.
-  Only valid for tasks in `:input_required` state.
+  Valid for any non-terminal task state.
   """
   @spec continue_task(module(), Message.t(), Task.t(), State.t()) ::
           {:ok, {Task.t(), State.t()}} | {:error, :not_continuable}
   def continue_task(module, message, task, state) do
-    if task.status.state == :input_required do
-      task = %{task | history: task.history ++ [message]}
-      {:ok, run_task(module, message, task, state)}
-    else
+    if Task.terminal?(task) do
       {:error, :not_continuable}
+    else
+      task = %{task | history: task.history ++ [message]}
+      task = %{task | metadata: Map.delete(task.metadata, :stream)}
+      {:ok, run_task(module, message, task, state)}
     end
   end
 

@@ -59,7 +59,7 @@ defmodule A2A do
   ## Options
 
   - `:context_id` — associate the message with a conversation context
-  - `:task_id` — continue an existing task (must be in `:input_required` state)
+  - `:task_id` — continue an existing task (must be in a non-terminal state)
   - `:timeout` — GenServer call timeout in ms (default: `60_000`)
 
   ## Examples
