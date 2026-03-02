@@ -5,7 +5,7 @@ defmodule A2A.Test.Handler do
   alias A2A.JSONRPC.Error
 
   @impl true
-  def handle_send(message, _params) do
+  def handle_send(message, _params, _context) do
     task = %A2A.Task{
       id: A2A.ID.generate("tsk"),
       status: A2A.Task.Status.new(:completed),
@@ -16,7 +16,7 @@ defmodule A2A.Test.Handler do
   end
 
   @impl true
-  def handle_get("existing", _params) do
+  def handle_get("existing", _params, _context) do
     {:ok,
      %A2A.Task{
        id: "existing",
@@ -24,12 +24,12 @@ defmodule A2A.Test.Handler do
      }}
   end
 
-  def handle_get(_task_id, _params) do
+  def handle_get(_task_id, _params, _context) do
     {:error, Error.task_not_found()}
   end
 
   @impl true
-  def handle_cancel("cancelable", _params) do
+  def handle_cancel("cancelable", _params, _context) do
     {:ok,
      %A2A.Task{
        id: "cancelable",
@@ -37,7 +37,7 @@ defmodule A2A.Test.Handler do
      }}
   end
 
-  def handle_cancel(_task_id, _params) do
+  def handle_cancel(_task_id, _params, _context) do
     {:error, Error.task_not_cancelable()}
   end
 end

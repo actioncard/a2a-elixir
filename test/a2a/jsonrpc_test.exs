@@ -254,13 +254,13 @@ defmodule A2A.JSONRPCTest do
         @behaviour A2A.JSONRPC
 
         @impl true
-        def handle_send(_message, _params), do: raise("boom")
+        def handle_send(_message, _params, _ctx), do: raise("boom")
 
         @impl true
-        def handle_get(_id, _params), do: raise("boom")
+        def handle_get(_id, _params, _ctx), do: raise("boom")
 
         @impl true
-        def handle_cancel(_id, _params), do: raise("boom")
+        def handle_cancel(_id, _params, _ctx), do: raise("boom")
       end
 
       {:reply, response} =

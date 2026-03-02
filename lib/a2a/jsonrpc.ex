@@ -59,35 +59,39 @@ defmodule A2A.JSONRPC do
           | {:stream, String.t(), map(), Request.id()}
 
   @doc "Called for `message/send` and `message/stream` requests."
-  @callback handle_send(A2A.Message.t(), params :: map()) ::
+  @callback handle_send(A2A.Message.t(), params :: map(), context :: map()) ::
               {:ok, A2A.Task.t()} | {:error, Error.t()}
 
   @doc "Called for `tasks/get` requests."
-  @callback handle_get(task_id :: String.t(), params :: map()) ::
+  @callback handle_get(task_id :: String.t(), params :: map(), context :: map()) ::
               {:ok, A2A.Task.t()} | {:error, Error.t()}
 
   @doc "Called for `tasks/cancel` requests."
-  @callback handle_cancel(task_id :: String.t(), params :: map()) ::
+  @callback handle_cancel(task_id :: String.t(), params :: map(), context :: map()) ::
               {:ok, A2A.Task.t()} | {:error, Error.t()}
 
   @doc "Called for `tasks/list` requests. Optional."
-  @callback handle_list(params :: map()) ::
+  @callback handle_list(params :: map(), context :: map()) ::
               {:ok, map()} | {:error, Error.t()}
 
-  @optional_callbacks handle_list: 1
+  @optional_callbacks handle_list: 2
 
   @doc """
   Parses a JSON-RPC 2.0 request map and dispatches to the handler.
 
+  An optional `context` map is threaded through to every handler
+  callback, letting transports like `A2A.Plug` pass per-request data
+  (agent pid, metadata, etc.) without the process dictionary.
+
   Returns `{:reply, response_map}` for synchronous methods, or
   `{:stream, method, params, id}` for streaming methods.
   """
-  @spec handle(map(), module()) :: result()
-  def handle(raw, handler) do
+  @spec handle(map(), module(), map()) :: result()
+  def handle(raw, handler, context \\ %{}) do
     with {:ok, request} <- Request.parse(raw),
          request = normalize_method(request),
          :ok <- Request.validate_params(request) do
-      dispatch(request, handler)
+      dispatch(request, handler, context)
     else
       {:error, %Error{} = error} ->
         id = extract_id(raw)
@@ -97,9 +101,10 @@ defmodule A2A.JSONRPC do
 
   # -- dispatch --------------------------------------------------------------
 
-  defp dispatch(%Request{method: "message/send"} = req, handler) do
+  defp dispatch(%Request{method: "message/send"} = req, handler, ctx) do
     with {:ok, message} <- decode_message(req.params),
-         {:ok, task} <- safe_call(fn -> handler.handle_send(message, req.params) end),
+         {:ok, task} <-
+           safe_call(fn -> handler.handle_send(message, req.params, ctx) end),
          {:ok, encoded} <- A2A.JSON.encode(A2A.Task.strip_stream_metadata(task)) do
       {:reply, Response.success(req.id, %{"task" => encoded})}
     else
@@ -107,7 +112,7 @@ defmodule A2A.JSONRPC do
     end
   end
 
-  defp dispatch(%Request{method: "message/stream"} = req, _handler) do
+  defp dispatch(%Request{method: "message/stream"} = req, _handler, _ctx) do
     case decode_message(req.params) do
       {:ok, message} ->
         params = Map.put(req.params, "message", message)
@@ -118,11 +123,12 @@ defmodule A2A.JSONRPC do
     end
   end
 
-  defp dispatch(%Request{method: "tasks/get"} = req, handler) do
+  defp dispatch(%Request{method: "tasks/get"} = req, handler, ctx) do
     task_id = req.params["id"]
     history_length = req.params["historyLength"]
 
-    with {:ok, task} <- safe_call(fn -> handler.handle_get(task_id, req.params) end),
+    with {:ok, task} <-
+           safe_call(fn -> handler.handle_get(task_id, req.params, ctx) end),
          task =
            task
            |> A2A.Task.truncate_history(history_length)
@@ -134,10 +140,11 @@ defmodule A2A.JSONRPC do
     end
   end
 
-  defp dispatch(%Request{method: "tasks/cancel"} = req, handler) do
+  defp dispatch(%Request{method: "tasks/cancel"} = req, handler, ctx) do
     task_id = req.params["id"]
 
-    with {:ok, task} <- safe_call(fn -> handler.handle_cancel(task_id, req.params) end),
+    with {:ok, task} <-
+           safe_call(fn -> handler.handle_cancel(task_id, req.params, ctx) end),
          {:ok, encoded} <- A2A.JSON.encode(A2A.Task.strip_stream_metadata(task)) do
       {:reply, Response.success(req.id, encoded)}
     else
@@ -145,9 +152,9 @@ defmodule A2A.JSONRPC do
     end
   end
 
-  defp dispatch(%Request{method: "tasks/list"} = req, handler) do
-    if function_exported?(handler, :handle_list, 1) do
-      case safe_call(fn -> handler.handle_list(req.params) end) do
+  defp dispatch(%Request{method: "tasks/list"} = req, handler, ctx) do
+    if function_exported?(handler, :handle_list, 2) do
+      case safe_call(fn -> handler.handle_list(req.params, ctx) end) do
         {:ok, result} -> {:reply, Response.success(req.id, result)}
         {:error, %Error{} = error} -> {:reply, Response.error(req.id, error)}
       end
@@ -156,22 +163,23 @@ defmodule A2A.JSONRPC do
     end
   end
 
-  defp dispatch(%Request{method: "tasks/resubscribe"} = req, _handler) do
+  defp dispatch(%Request{method: "tasks/resubscribe"} = req, _handler, _ctx) do
     {:stream, "tasks/resubscribe", req.params, req.id}
   end
 
-  defp dispatch(%Request{method: "tasks/pushNotificationConfig/" <> _} = req, _handler) do
+  defp dispatch(%Request{method: "tasks/pushNotificationConfig/" <> _} = req, _, _) do
     {:reply, Response.error(req.id, Error.push_notification_not_supported())}
   end
 
   defp dispatch(
          %Request{method: "agent/getAuthenticatedExtendedCard"} = req,
-         _handler
+         _handler,
+         _ctx
        ) do
     {:reply, Response.error(req.id, Error.unsupported_operation())}
   end
 
-  defp dispatch(%Request{} = req, _handler) do
+  defp dispatch(%Request{} = req, _handler, _ctx) do
     {:reply, Response.error(req.id, Error.method_not_found(req.method))}
   end
 

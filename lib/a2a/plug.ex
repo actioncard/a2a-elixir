@@ -185,37 +185,31 @@ if Code.ensure_loaded?(Plug) do
     defp handle_json_rpc(conn, opts) do
       case read_json_body(conn) do
         {:ok, decoded, conn} ->
-          Process.put(:a2a_plug_agent, opts.agent)
-          Process.put(:a2a_plug_opts, opts)
+          context = %{agent: opts.agent, opts: opts}
 
-          try do
-            case A2A.JSONRPC.handle(decoded, __MODULE__) do
-              {:reply, response} ->
-                send_json(conn, response)
+          case A2A.JSONRPC.handle(decoded, __MODULE__, context) do
+            {:reply, response} ->
+              send_json(conn, response)
 
-              {:stream, "message/stream", params, id} ->
-                message = params["message"]
+            {:stream, "message/stream", params, id} ->
+              message = params["message"]
 
-                call_opts =
-                  params
-                  |> build_call_opts(opts)
-                  |> maybe_put_fallback(:task_id, message.task_id)
-                  |> maybe_put_fallback(:context_id, message.context_id)
+              call_opts =
+                params
+                |> build_call_opts(opts)
+                |> maybe_put_fallback(:task_id, message.task_id)
+                |> maybe_put_fallback(:context_id, message.context_id)
 
-                A2A.Plug.SSE.stream_message(
-                  conn,
-                  opts.agent,
-                  message,
-                  id,
-                  call_opts
-                )
+              A2A.Plug.SSE.stream_message(
+                conn,
+                opts.agent,
+                message,
+                id,
+                call_opts
+              )
 
-              {:stream, "tasks/resubscribe", _params, id} ->
-                send_json(conn, Response.error(id, Error.unsupported_operation()))
-            end
-          after
-            Process.delete(:a2a_plug_agent)
-            Process.delete(:a2a_plug_opts)
+            {:stream, "tasks/resubscribe", _params, id} ->
+              send_json(conn, Response.error(id, Error.unsupported_operation()))
           end
 
         {:error, :parse_error} ->
@@ -260,10 +254,7 @@ if Code.ensure_loaded?(Plug) do
     # -- JSONRPC behaviour callbacks -------------------------------------------
 
     @impl A2A.JSONRPC
-    def handle_send(message, params) do
-      agent = Process.get(:a2a_plug_agent)
-      plug_opts = Process.get(:a2a_plug_opts, %{metadata: %{}})
-
+    def handle_send(message, params, %{agent: agent, opts: plug_opts}) do
       call_opts =
         params
         |> build_call_opts(plug_opts)
@@ -277,9 +268,7 @@ if Code.ensure_loaded?(Plug) do
     end
 
     @impl A2A.JSONRPC
-    def handle_get(task_id, _params) do
-      agent = Process.get(:a2a_plug_agent)
-
+    def handle_get(task_id, _params, %{agent: agent}) do
       case GenServer.call(agent, {:get_task, task_id}) do
         {:ok, task} -> {:ok, task}
         {:error, :not_found} -> {:error, Error.task_not_found()}
@@ -287,9 +276,7 @@ if Code.ensure_loaded?(Plug) do
     end
 
     @impl A2A.JSONRPC
-    def handle_cancel(task_id, _params) do
-      agent = Process.get(:a2a_plug_agent)
-
+    def handle_cancel(task_id, _params, %{agent: agent}) do
       case GenServer.call(agent, {:cancel, task_id}) do
         :ok ->
           case GenServer.call(agent, {:get_task, task_id}) do
@@ -306,9 +293,7 @@ if Code.ensure_loaded?(Plug) do
     end
 
     @impl A2A.JSONRPC
-    def handle_list(params) do
-      agent = Process.get(:a2a_plug_agent)
-
+    def handle_list(params, %{agent: agent}) do
       case GenServer.call(agent, {:list_tasks, params}) do
         {:ok, result} ->
           {:ok, result}
