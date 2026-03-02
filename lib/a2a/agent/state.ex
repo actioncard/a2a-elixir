@@ -179,7 +179,7 @@ defmodule A2A.Agent.State do
   defp decode_state_atom("TASK_STATE_REJECTED"), do: :rejected
   defp decode_state_atom("TASK_STATE_AUTH_REQUIRED"), do: :auth_required
   defp decode_state_atom("TASK_STATE_UNKNOWN"), do: :unknown
-  defp decode_state_atom(s), do: String.to_existing_atom(s)
+  defp decode_state_atom(_s), do: :unknown
 
   defp parse_datetime(str) do
     case DateTime.from_iso8601(str) do

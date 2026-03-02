@@ -109,5 +109,116 @@ defmodule A2A.JSONRPC.RequestTest do
       req = %Request{jsonrpc: "2.0", method: "custom/thing", params: %{}}
       assert :ok = Request.validate_params(req)
     end
+
+    # -- tasks/list validation -------------------------------------------------
+
+    test "tasks/list accepts valid params" do
+      req = %Request{
+        jsonrpc: "2.0",
+        method: "tasks/list",
+        params: %{
+          "pageSize" => 10,
+          "status" => "TASK_STATE_WORKING",
+          "historyLength" => 5,
+          "statusTimestampAfter" => "2025-01-01T00:00:00Z"
+        }
+      }
+
+      assert :ok = Request.validate_params(req)
+    end
+
+    test "tasks/list accepts empty params" do
+      req = %Request{jsonrpc: "2.0", method: "tasks/list", params: %{}}
+      assert :ok = Request.validate_params(req)
+    end
+
+    test "tasks/list rejects invalid pageSize" do
+      req = %Request{
+        jsonrpc: "2.0",
+        method: "tasks/list",
+        params: %{"pageSize" => 0}
+      }
+
+      assert {:error, %Error{code: -32_602}} = Request.validate_params(req)
+    end
+
+    test "tasks/list rejects invalid status" do
+      req = %Request{
+        jsonrpc: "2.0",
+        method: "tasks/list",
+        params: %{"status" => "INVALID_STATUS"}
+      }
+
+      assert {:error, %Error{code: -32_602}} = Request.validate_params(req)
+    end
+
+    test "tasks/list rejects non-string status" do
+      req = %Request{
+        jsonrpc: "2.0",
+        method: "tasks/list",
+        params: %{"status" => 123}
+      }
+
+      assert {:error, %Error{code: -32_602}} = Request.validate_params(req)
+    end
+
+    test "tasks/list rejects negative historyLength" do
+      req = %Request{
+        jsonrpc: "2.0",
+        method: "tasks/list",
+        params: %{"historyLength" => -1}
+      }
+
+      assert {:error, %Error{code: -32_602}} = Request.validate_params(req)
+    end
+
+    test "tasks/list rejects non-integer historyLength" do
+      req = %Request{
+        jsonrpc: "2.0",
+        method: "tasks/list",
+        params: %{"historyLength" => "five"}
+      }
+
+      assert {:error, %Error{code: -32_602}} = Request.validate_params(req)
+    end
+
+    test "tasks/list rejects invalid timestamp" do
+      req = %Request{
+        jsonrpc: "2.0",
+        method: "tasks/list",
+        params: %{"statusTimestampAfter" => "not-a-timestamp"}
+      }
+
+      assert {:error, %Error{code: -32_602}} = Request.validate_params(req)
+    end
+
+    test "tasks/list rejects non-string timestamp" do
+      req = %Request{
+        jsonrpc: "2.0",
+        method: "tasks/list",
+        params: %{"statusTimestampAfter" => 12345}
+      }
+
+      assert {:error, %Error{code: -32_602}} = Request.validate_params(req)
+    end
+
+    test "tasks/list accepts all valid status values" do
+      statuses = ~w(
+        TASK_STATE_SUBMITTED TASK_STATE_WORKING TASK_STATE_INPUT_REQUIRED
+        TASK_STATE_COMPLETED TASK_STATE_CANCELED TASK_STATE_FAILED
+        TASK_STATE_REJECTED TASK_STATE_AUTH_REQUIRED TASK_STATE_UNKNOWN
+      )
+
+      for status <- statuses do
+        req = %Request{
+          jsonrpc: "2.0",
+          method: "tasks/list",
+          params: %{"status" => status}
+        }
+
+        assert :ok = Request.validate_params(req),
+               "expected #{status} to be valid"
+      end
+    end
   end
 end

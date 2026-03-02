@@ -56,12 +56,26 @@ defmodule A2A.JSONRPC.Request do
     end
   end
 
+  @valid_statuses ~w(
+    TASK_STATE_SUBMITTED TASK_STATE_WORKING TASK_STATE_INPUT_REQUIRED
+    TASK_STATE_COMPLETED TASK_STATE_CANCELED TASK_STATE_FAILED
+    TASK_STATE_REJECTED TASK_STATE_AUTH_REQUIRED TASK_STATE_UNKNOWN
+  )
+
   def validate_params(%__MODULE__{method: "tasks/list", params: params}) do
     cond do
-      not is_nil(params["pageSize"]) and
-          (not is_integer(params["pageSize"]) or params["pageSize"] < 1 or
-             params["pageSize"] > 100) ->
+      bad_page_size?(params) ->
         {:error, Error.invalid_params("\"pageSize\" must be an integer between 1 and 100")}
+
+      bad_status?(params) ->
+        {:error, Error.invalid_params("\"status\" must be a valid task state")}
+
+      bad_history_length?(params) ->
+        {:error, Error.invalid_params("\"historyLength\" must be a non-negative integer")}
+
+      bad_timestamp?(params) ->
+        {:error,
+         Error.invalid_params("\"statusTimestampAfter\" must be a valid ISO 8601 timestamp")}
 
       true ->
         :ok
@@ -96,4 +110,33 @@ defmodule A2A.JSONRPC.Request do
   defp validate_params_field(%{"params" => params}) when is_map(params), do: {:ok, params}
   defp validate_params_field(%{"params" => _}), do: {:ok, %{}}
   defp validate_params_field(_), do: {:ok, %{}}
+
+  defp bad_page_size?(%{"pageSize" => ps}) do
+    not is_integer(ps) or ps < 1 or ps > 100
+  end
+
+  defp bad_page_size?(_), do: false
+
+  defp bad_status?(%{"status" => status}) when is_binary(status) do
+    status not in @valid_statuses
+  end
+
+  defp bad_status?(%{"status" => _}), do: true
+  defp bad_status?(_), do: false
+
+  defp bad_history_length?(%{"historyLength" => hl}) do
+    not is_integer(hl) or hl < 0
+  end
+
+  defp bad_history_length?(_), do: false
+
+  defp bad_timestamp?(%{"statusTimestampAfter" => ts}) when is_binary(ts) do
+    case DateTime.from_iso8601(ts) do
+      {:ok, _, _} -> false
+      _ -> true
+    end
+  end
+
+  defp bad_timestamp?(%{"statusTimestampAfter" => _}), do: true
+  defp bad_timestamp?(_), do: false
 end
