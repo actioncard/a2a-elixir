@@ -114,8 +114,10 @@ defmodule A2A.JSONRPC do
 
   defp dispatch(%Request{method: "tasks/get"} = req, handler) do
     task_id = req.params["id"]
+    history_length = req.params["historyLength"]
 
     with {:ok, task} <- safe_call(fn -> handler.handle_get(task_id, req.params) end),
+         task = maybe_truncate_history(task, history_length),
          {:ok, encoded} <- A2A.JSON.encode(task) do
       {:reply, Response.success(req.id, encoded)}
     else
@@ -170,6 +172,15 @@ defmodule A2A.JSONRPC do
   rescue
     e -> {:error, Error.internal_error(Exception.message(e))}
   end
+
+  defp maybe_truncate_history(task, nil), do: task
+  defp maybe_truncate_history(task, 0), do: %{task | history: []}
+
+  defp maybe_truncate_history(task, n) when is_integer(n) and n > 0 do
+    %{task | history: Enum.take(task.history, -n)}
+  end
+
+  defp maybe_truncate_history(task, _), do: task
 
   defp normalize_method(%Request{method: method} = request) do
     case Map.get(@method_aliases, method) do
