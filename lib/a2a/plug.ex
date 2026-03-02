@@ -194,12 +194,18 @@ if Code.ensure_loaded?(Plug) do
                 send_json(conn, response)
 
               {:stream, "message/stream", params, id} ->
-                call_opts = build_call_opts(params, opts)
+                message = params["message"]
+
+                call_opts =
+                  params
+                  |> build_call_opts(opts)
+                  |> maybe_put_fallback(:task_id, message.task_id)
+                  |> maybe_put_fallback(:context_id, message.context_id)
 
                 A2A.Plug.SSE.stream_message(
                   conn,
                   opts.agent,
-                  params["message"],
+                  message,
                   id,
                   call_opts
                 )
@@ -257,7 +263,12 @@ if Code.ensure_loaded?(Plug) do
     def handle_send(message, params) do
       agent = Process.get(:a2a_plug_agent)
       plug_opts = Process.get(:a2a_plug_opts, %{metadata: %{}})
-      call_opts = build_call_opts(params, plug_opts)
+
+      call_opts =
+        params
+        |> build_call_opts(plug_opts)
+        |> maybe_put_fallback(:task_id, message.task_id)
+        |> maybe_put_fallback(:context_id, message.context_id)
 
       case A2A.call(agent, message, call_opts) do
         {:ok, task} -> {:ok, task}
@@ -323,5 +334,9 @@ if Code.ensure_loaded?(Plug) do
 
     defp maybe_put(opts, _key, nil), do: opts
     defp maybe_put(opts, key, val), do: [{key, val} | opts]
+
+    defp maybe_put_fallback(opts, key, val) do
+      if Keyword.has_key?(opts, key), do: opts, else: maybe_put(opts, key, val)
+    end
   end
 end

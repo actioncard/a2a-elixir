@@ -205,6 +205,7 @@ defmodule A2A.PlugTest do
         |> A2A.Plug.call(opts)
 
       task_id = json_body(send_conn)["result"]["task"]["id"]
+
       assert json_body(send_conn)["result"]["task"]["status"]["state"] ==
                "TASK_STATE_INPUT_REQUIRED"
 
