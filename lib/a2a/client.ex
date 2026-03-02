@@ -383,6 +383,11 @@ if Code.ensure_loaded?(Req) do
        }}
     end
 
+    # SendMessageResult wrapper: {"task": Task} or {"message": Message}
+    defp decode_jsonrpc_body(%{"result" => %{"task" => task}}, :task) do
+      A2A.JSON.decode(task, :task)
+    end
+
     defp decode_jsonrpc_body(%{"result" => result}, type) do
       A2A.JSON.decode(result, type)
     end

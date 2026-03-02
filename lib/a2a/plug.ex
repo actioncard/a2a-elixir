@@ -294,6 +294,16 @@ if Code.ensure_loaded?(Plug) do
       end
     end
 
+    @impl A2A.JSONRPC
+    def handle_list(params) do
+      agent = Process.get(:a2a_plug_agent)
+
+      case GenServer.call(agent, {:list_tasks, params}) do
+        {:ok, result} -> {:ok, result}
+        {:error, reason} -> {:error, Error.internal_error(inspect(reason))}
+      end
+    end
+
     # -- Helpers ---------------------------------------------------------------
 
     defp build_call_opts(params, plug_opts) do

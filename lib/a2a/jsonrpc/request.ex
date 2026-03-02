@@ -56,6 +56,18 @@ defmodule A2A.JSONRPC.Request do
     end
   end
 
+  def validate_params(%__MODULE__{method: "tasks/list", params: params}) do
+    cond do
+      not is_nil(params["pageSize"]) and
+          (not is_integer(params["pageSize"]) or params["pageSize"] < 1 or
+             params["pageSize"] > 100) ->
+        {:error, Error.invalid_params("\"pageSize\" must be an integer between 1 and 100")}
+
+      true ->
+        :ok
+    end
+  end
+
   def validate_params(%__MODULE__{}), do: :ok
 
   # -- private ---------------------------------------------------------------

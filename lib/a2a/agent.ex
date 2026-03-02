@@ -347,6 +347,10 @@ defmodule A2A.Agent do
         {:reply, A2A.Agent.State.get_task(state, task_id), state}
       end
 
+      def handle_call({:list_tasks, params}, _from, state) do
+        {:reply, A2A.Agent.State.list_tasks(state, params), state}
+      end
+
       def handle_call(:get_agent_card, _from, state) do
         {:reply, __MODULE__.agent_card(), state}
       end

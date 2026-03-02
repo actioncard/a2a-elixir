@@ -195,7 +195,7 @@ defmodule A2A.JSONRPCTest do
       assert response["error"]["code"] == -32_003
     end
 
-    test "ListTasks returns method_not_found" do
+    test "ListTasks returns method_not_found when handler lacks handle_list" do
       {:reply, response} = JSONRPC.handle(rpc("ListTasks"), @handler)
 
       assert response["error"]["code"] == -32_601

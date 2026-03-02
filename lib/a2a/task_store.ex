@@ -45,4 +45,21 @@ defmodule A2A.TaskStore do
   Lists all tasks for a given context ID.
   """
   @callback list(ref(), context_id :: String.t()) :: {:ok, [A2A.Task.t()]}
+
+  @doc """
+  Lists tasks with filtering and pagination options.
+
+  ## Options
+
+  - `:context_id` — filter by context ID
+  - `:status` — filter by task state atom
+  - `:status_timestamp_after` — filter to tasks updated after this DateTime
+  - `:page_size` — max results to return (default 50)
+  - `:page_token` — opaque cursor for pagination
+  - `:history_length` — number of history entries to include (default 0)
+  - `:include_artifacts` — whether to include artifacts (default false)
+  """
+  @callback list_all(ref(), opts :: keyword()) :: {:ok, map()}
+
+  @optional_callbacks list_all: 2
 end

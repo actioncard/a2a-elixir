@@ -70,6 +70,12 @@ defmodule A2A.JSONRPC do
   @callback handle_cancel(task_id :: String.t(), params :: map()) ::
               {:ok, A2A.Task.t()} | {:error, Error.t()}
 
+  @doc "Called for `tasks/list` requests. Optional."
+  @callback handle_list(params :: map()) ::
+              {:ok, map()} | {:error, Error.t()}
+
+  @optional_callbacks handle_list: 1
+
   @doc """
   Parses a JSON-RPC 2.0 request map and dispatches to the handler.
 
@@ -133,6 +139,17 @@ defmodule A2A.JSONRPC do
       {:reply, Response.success(req.id, encoded)}
     else
       {:error, %Error{} = error} -> {:reply, Response.error(req.id, error)}
+    end
+  end
+
+  defp dispatch(%Request{method: "tasks/list"} = req, handler) do
+    if function_exported?(handler, :handle_list, 1) do
+      case safe_call(fn -> handler.handle_list(req.params) end) do
+        {:ok, result} -> {:reply, Response.success(req.id, result)}
+        {:error, %Error{} = error} -> {:reply, Response.error(req.id, error)}
+      end
+    else
+      {:reply, Response.error(req.id, Error.method_not_found(req.method))}
     end
   end
 
