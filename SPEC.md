@@ -156,9 +156,6 @@ Reply types:
 ```elixir
 # Called when a task is cancelled by the client
 @callback handle_cancel(context()) :: :ok | {:error, String.t()}
-
-# Pre-processing hook for auth context, rate limiting, validation
-@callback handle_init(message(), map()) :: {:ok, map()} | {:error, String.t()}
 ```
 
 ---

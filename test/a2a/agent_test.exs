@@ -15,11 +15,6 @@ defmodule A2A.AgentTest do
       assert :ok = A2A.Test.EchoAgent.handle_cancel(context)
     end
 
-    test "default handle_init/2 passes through state" do
-      msg = A2A.Message.new_user("hi")
-      assert {:ok, %{x: 1}} = A2A.Test.EchoAgent.handle_init(msg, %{x: 1})
-    end
-
     test "handle_message/2 works" do
       msg = A2A.Message.new_user("hello")
       ctx = %{task_id: "t-1", context_id: nil, history: []}

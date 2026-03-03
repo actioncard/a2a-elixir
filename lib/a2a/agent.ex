@@ -177,14 +177,6 @@ defmodule A2A.Agent do
   """
   @callback handle_cancel(context()) :: :ok | {:error, String.t()}
 
-  @doc """
-  Pre-processing hook called before `handle_message/2`. Optional.
-
-  Receives the incoming message and the current extra state map.
-  Return `{:ok, state}` to proceed or `{:error, reason}` to reject.
-  """
-  @callback handle_init(A2A.Message.t(), map()) :: {:ok, map()} | {:error, String.t()}
-
   @doc false
   defmacro __using__(opts) do
     card_ast = build_card_ast(opts)
@@ -199,10 +191,7 @@ defmodule A2A.Agent do
       @impl A2A.Agent
       def handle_cancel(_context), do: :ok
 
-      @impl A2A.Agent
-      def handle_init(_message, state), do: {:ok, state}
-
-      defoverridable handle_cancel: 1, handle_init: 2
+      defoverridable handle_cancel: 1
 
       # --- GenServer client API ---
 
@@ -281,37 +270,31 @@ defmodule A2A.Agent do
         context_id = Keyword.get(opts, :context_id)
         metadata = Keyword.get(opts, :metadata, %{})
 
-        case A2A.Agent.Runtime.run_init(__MODULE__, message) do
-          {:ok, _extra} ->
-            result =
-              if task_id do
-                case A2A.Agent.State.get_task(state, task_id) do
-                  {:ok, task} ->
-                    A2A.Agent.Runtime.continue_task(__MODULE__, message, task, state)
+        result =
+          if task_id do
+            case A2A.Agent.State.get_task(state, task_id) do
+              {:ok, task} ->
+                A2A.Agent.Runtime.continue_task(__MODULE__, message, task, state)
 
-                  {:error, :not_found} ->
-                    {:error, :not_found}
-                end
-              else
-                {:ok,
-                 A2A.Agent.Runtime.process_message(
-                   __MODULE__,
-                   message,
-                   context_id,
-                   state,
-                   metadata
-                 )}
-              end
-
-            case result do
-              {:ok, {task, state}} ->
-                task = maybe_wrap_stream(task, from)
-                state = A2A.Agent.State.put_task(state, task)
-                {:reply, {:ok, task}, state}
-
-              {:error, reason} ->
-                {:reply, {:error, reason}, state}
+              {:error, :not_found} ->
+                {:error, :not_found}
             end
+          else
+            {:ok,
+             A2A.Agent.Runtime.process_message(
+               __MODULE__,
+               message,
+               context_id,
+               state,
+               metadata
+             )}
+          end
+
+        case result do
+          {:ok, {task, state}} ->
+            task = maybe_wrap_stream(task, from)
+            state = A2A.Agent.State.put_task(state, task)
+            {:reply, {:ok, task}, state}
 
           {:error, reason} ->
             {:reply, {:error, reason}, state}

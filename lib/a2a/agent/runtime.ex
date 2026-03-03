@@ -5,15 +5,6 @@ defmodule A2A.Agent.Runtime do
   alias A2A.{Artifact, Message, Task}
 
   @doc """
-  Calls the agent's `handle_init/2` callback via `apply/3` to prevent
-  compile-time reachability warnings when the default implementation is used.
-  """
-  @spec run_init(module(), Message.t()) :: {:ok, map()} | {:error, String.t()}
-  def run_init(module, message) do
-    apply(module, :handle_init, [message, %{}])
-  end
-
-  @doc """
   Calls the agent's `handle_cancel/1` callback via `apply/3`.
   """
   @spec run_cancel(module(), A2A.Agent.context()) :: :ok | {:error, String.t()}
