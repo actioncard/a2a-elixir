@@ -152,11 +152,11 @@ end
 
 ## Examples
 
-The [`examples/`](examples/) directory contains runnable scripts:
+The [`examples/`](https://github.com/actioncard/a2a-elixir/tree/main/examples) directory contains runnable scripts:
 
-- **[`demo.exs`](examples/demo.exs)** — local agents: simple call, multi-turn, and streaming
-- **[`client_server.exs`](examples/client_server.exs)** — full HTTP client/server with Bandit and `A2A.Client`
-- **[`supervisor_demo.exs`](examples/supervisor_demo.exs)** — `A2A.AgentSupervisor`, registry, and skill-based routing
+- **[`demo.exs`](https://github.com/actioncard/a2a-elixir/blob/main/examples/demo.exs)** — local agents: simple call, multi-turn, and streaming
+- **[`client_server.exs`](https://github.com/actioncard/a2a-elixir/blob/main/examples/client_server.exs)** — full HTTP client/server with Bandit and `A2A.Client`
+- **[`supervisor_demo.exs`](https://github.com/actioncard/a2a-elixir/blob/main/examples/supervisor_demo.exs)** — `A2A.AgentSupervisor`, registry, and skill-based routing
 
 Run any example with:
 
