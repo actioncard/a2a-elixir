@@ -5,6 +5,8 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  release:
+    types: [published]
 
 permissions:
   contents: read
@@ -167,3 +169,21 @@ jobs:
           uv run ./run_tck.py \
             --sut-url http://localhost:9999 \
             --category mandatory
+
+  publish:
+    name: Publish to Hex
+    if: github.event_name == 'release'
+    needs: [quality, test, tck]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: erlef/setup-beam@v1
+        with:
+          elixir-version: "1.18"
+          otp-version: "27"
+
+      - run: mix deps.get
+      - run: mix hex.publish --organization actioncard --yes
+    env:
+      HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
