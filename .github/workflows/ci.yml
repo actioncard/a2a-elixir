@@ -28,21 +28,21 @@ jobs:
           otp-version: ${{ matrix.otp }}
 
       - name: Restore dependencies cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: deps
           key: deps-${{ runner.os }}-${{ matrix.elixir }}-${{ matrix.otp }}-${{ hashFiles('**/mix.lock') }}
           restore-keys: deps-${{ runner.os }}-${{ matrix.elixir }}-${{ matrix.otp }}-
 
       - name: Restore build cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: _build
           key: build-${{ runner.os }}-${{ matrix.elixir }}-${{ matrix.otp }}-${{ hashFiles('**/mix.lock') }}
           restore-keys: build-${{ runner.os }}-${{ matrix.elixir }}-${{ matrix.otp }}-
 
       - name: Restore PLT cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: priv/plts
           key: plts-${{ runner.os }}-${{ matrix.elixir }}-${{ matrix.otp }}-${{ hashFiles('**/mix.lock') }}
@@ -80,14 +80,14 @@ jobs:
           otp-version: ${{ matrix.otp }}
 
       - name: Restore dependencies cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: deps
           key: deps-${{ runner.os }}-${{ matrix.elixir }}-${{ matrix.otp }}-${{ hashFiles('**/mix.lock') }}
           restore-keys: deps-${{ runner.os }}-${{ matrix.elixir }}-${{ matrix.otp }}-
 
       - name: Restore build cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: _build
           key: build-${{ runner.os }}-${{ matrix.elixir }}-${{ matrix.otp }}-${{ hashFiles('**/mix.lock') }}
@@ -113,21 +113,21 @@ jobs:
       - uses: astral-sh/setup-uv@v7
 
       - name: Restore dependencies cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: deps
           key: deps-${{ runner.os }}-1.18-27-${{ hashFiles('**/mix.lock') }}
           restore-keys: deps-${{ runner.os }}-1.18-27-
 
       - name: Restore build cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: _build
           key: build-${{ runner.os }}-1.18-27-${{ hashFiles('**/mix.lock') }}
           restore-keys: build-${{ runner.os }}-1.18-27-
 
       - name: Cache TCK repo
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: .tck
           key: tck-${{ hashFiles('bin/tck') }}
