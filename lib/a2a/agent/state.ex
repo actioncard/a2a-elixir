@@ -75,12 +75,10 @@ defmodule A2A.Agent.State do
     else
       list_from_memory(state, params)
     end
-    |> encode_list_result()
   end
 
   def list_tasks(state, params) do
     list_from_memory(state, params)
-    |> encode_list_result()
   end
 
   defp list_from_memory(state, params) do
@@ -126,22 +124,4 @@ defmodule A2A.Agent.State do
       include_artifacts: params["includeArtifacts"] || false
     ]
   end
-
-  defp encode_list_result({:ok, %{tasks: tasks} = result}) do
-    encoded_tasks =
-      Enum.map(tasks, fn task ->
-        {:ok, encoded} = task |> A2A.Task.strip_stream_metadata() |> A2A.JSON.encode()
-        encoded
-      end)
-
-    {:ok,
-     %{
-       "tasks" => encoded_tasks,
-       "totalSize" => result.total_size,
-       "pageSize" => result.page_size,
-       "nextPageToken" => result.next_page_token
-     }}
-  end
-
-  defp encode_list_result(error), do: error
 end

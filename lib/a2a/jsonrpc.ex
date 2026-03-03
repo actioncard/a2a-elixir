@@ -155,7 +155,7 @@ defmodule A2A.JSONRPC do
   defp dispatch(%Request{method: "tasks/list"} = req, handler, ctx) do
     if function_exported?(handler, :handle_list, 2) do
       case safe_call(fn -> handler.handle_list(req.params, ctx) end) do
-        {:ok, result} -> {:reply, Response.success(req.id, result)}
+        {:ok, result} -> {:reply, Response.success(req.id, encode_list_result(result))}
         {:error, %Error{} = error} -> {:reply, Response.error(req.id, error)}
       end
     else
@@ -190,6 +190,20 @@ defmodule A2A.JSONRPC do
       {:ok, _message} = ok -> ok
       {:error, reason} -> {:error, Error.invalid_params(inspect(reason))}
     end
+  end
+
+  defp encode_list_result(%{tasks: tasks} = result) do
+    encoded_tasks =
+      Enum.map(tasks, fn task ->
+        task |> A2A.Task.strip_stream_metadata() |> A2A.JSON.encode!()
+      end)
+
+    %{
+      "tasks" => encoded_tasks,
+      "totalSize" => result.total_size,
+      "pageSize" => result.page_size,
+      "nextPageToken" => result.next_page_token
+    }
   end
 
   defp safe_call(fun) do

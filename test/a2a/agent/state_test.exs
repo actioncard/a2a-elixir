@@ -33,21 +33,21 @@ defmodule A2A.Agent.StateTest do
 
       {:ok, result} = State.list_tasks(state, %{})
 
-      ids = Enum.map(result["tasks"], & &1["id"])
+      ids = Enum.map(result.tasks, & &1.id)
       assert ids == ["b", "c", "a"]
     end
 
-    test "pageSize in response reflects actual task count" do
+    test "page_size in response reflects actual task count" do
       t1 = make_task("a", :completed, timestamp: ~U[2025-01-01 00:00:00Z])
       t2 = make_task("b", :working, timestamp: ~U[2025-01-02 00:00:00Z])
       state = state_with_tasks([t1, t2])
 
       {:ok, result} = State.list_tasks(state, %{"pageSize" => 50})
 
-      assert result["pageSize"] == 2
+      assert result.page_size == 2
     end
 
-    test "pageSize in response is capped by actual results" do
+    test "page_size in response is capped by actual results" do
       tasks =
         for i <- 1..5 do
           ts = DateTime.add(~U[2025-01-01 00:00:00Z], i, :second)
@@ -58,8 +58,8 @@ defmodule A2A.Agent.StateTest do
 
       {:ok, result} = State.list_tasks(state, %{"pageSize" => 3})
 
-      assert result["pageSize"] == 3
-      assert length(result["tasks"]) == 3
+      assert result.page_size == 3
+      assert length(result.tasks) == 3
     end
 
     test "filters by status atom correctly" do
@@ -70,8 +70,8 @@ defmodule A2A.Agent.StateTest do
       {:ok, result} =
         State.list_tasks(state, %{"status" => "TASK_STATE_WORKING"})
 
-      assert length(result["tasks"]) == 1
-      assert hd(result["tasks"])["id"] == "b"
+      assert length(result.tasks) == 1
+      assert hd(result.tasks).id == "b"
     end
 
     test "unknown status returns empty results" do
@@ -81,25 +81,7 @@ defmodule A2A.Agent.StateTest do
       {:ok, result} =
         State.list_tasks(state, %{"status" => "TASK_STATE_UNKNOWN"})
 
-      assert result["tasks"] == []
-    end
-
-    test "strips stream metadata from tasks" do
-      stream_fn = fn -> :noop end
-
-      t1 =
-        make_task("a", :completed,
-          timestamp: ~U[2025-01-01 00:00:00Z],
-          metadata: %{"foo" => "bar", stream: stream_fn}
-        )
-
-      state = state_with_tasks([t1])
-
-      {:ok, result} = State.list_tasks(state, %{})
-
-      task = hd(result["tasks"])
-      assert task["metadata"] == %{"foo" => "bar"}
-      refute Map.has_key?(task["metadata"], :stream)
+      assert result.tasks == []
     end
   end
 end
