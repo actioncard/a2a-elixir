@@ -1,6 +1,7 @@
 # Build artifacts
 /_build/
 /deps/
+erl_crash.dump
 
 # Generated files
 /doc/
