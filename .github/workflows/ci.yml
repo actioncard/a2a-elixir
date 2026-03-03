@@ -20,7 +20,7 @@ jobs:
         elixir: ["1.18"]
         otp: ["27"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: erlef/setup-beam@v1
         with:
@@ -72,7 +72,7 @@ jobs:
           - elixir: "1.18"
             otp: "27"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: erlef/setup-beam@v1
         with:
@@ -103,7 +103,7 @@ jobs:
     name: TCK Compliance
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: erlef/setup-beam@v1
         with:
@@ -176,7 +176,7 @@ jobs:
     needs: [quality, test, tck]
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: erlef/setup-beam@v1
         with:
