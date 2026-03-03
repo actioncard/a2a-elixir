@@ -184,6 +184,16 @@ jobs:
           otp-version: "27"
 
       - run: mix deps.get
+
+      - name: Verify version matches tag
+        run: |
+          tag="${GITHUB_REF#refs/tags/v}"
+          mix_version=$(grep '@version "' mix.exs | sed 's/.*@version "//;s/"//')
+          if [ "$tag" != "$mix_version" ]; then
+            echo "::error::Tag v$tag does not match mix.exs version $mix_version"
+            exit 1
+          fi
+
       - run: mix hex.publish --organization actioncard --yes
     env:
       HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
