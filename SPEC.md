@@ -185,8 +185,8 @@ Discrete events:
   metadata: %{agent, task_id, from, to}
 ```
 
-Emit sites: `A2A.Agent.Runtime.process_message/4` (message span),
-`A2A.call/3` and `A2A.stream/3` (call span), `A2A.Agent.State.transition/2`
+Emit sites: `process_message/4` in Agent.Runtime (message span),
+`A2A.call/3` and `A2A.stream/3` (call span), `transition/2` in Agent.State
 (transition event).
 
 Add an `A2A.Telemetry` module documenting all events as a public API contract.
