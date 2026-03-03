@@ -37,7 +37,6 @@ defmodule A2A.MixProject do
     [
       # Runtime
       {:jason, "~> 1.4"},
-      {:telemetry, "~> 1.2"},
 
       # Optional runtime
       {:plug, "~> 1.16", optional: true},
