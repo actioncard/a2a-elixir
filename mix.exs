@@ -62,7 +62,8 @@ defmodule A2A.MixProject do
       name: "a2a",
       maintainers: ["Action Card AB"],
       licenses: ["Apache-2.0"],
-      files: ~w(lib .formatter.exs mix.exs README.md LICENSE CHANGELOG.md),
+      files:
+        ~w(lib examples .formatter.exs mix.exs README.md LICENSE CHANGELOG.md CONTRIBUTING.md SPEC.md),
       links: %{
         "GitHub" => @source_url,
         "A2A Spec" => @a2a_spec_url
@@ -73,7 +74,7 @@ defmodule A2A.MixProject do
   defp docs do
     [
       main: "A2A",
-      extras: ["README.md", "CHANGELOG.md", "LICENSE"],
+      extras: ["README.md", "CHANGELOG.md", "CONTRIBUTING.md", "SPEC.md", "LICENSE"],
       groups_for_modules: [
         Core: [~r/A2A$/],
         Storage: [~r/A2A\.TaskStore/],
