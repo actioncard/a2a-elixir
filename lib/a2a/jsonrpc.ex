@@ -56,7 +56,7 @@ defmodule A2A.JSONRPC do
 
   @type result ::
           {:reply, map()}
-          | {:stream, String.t(), map(), Request.id()}
+          | {:stream, String.t(), map(), String.t() | integer() | nil}
 
   @doc "Called for `message/send` and `message/stream` requests."
   @callback handle_send(A2A.Message.t(), params :: map(), context :: map()) ::

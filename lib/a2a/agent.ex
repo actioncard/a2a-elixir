@@ -41,11 +41,12 @@ defmodule A2A.Agent do
 
   - **`A2A.Agent`** (this module) — the behaviour definition and the `use`
     macro that generates GenServer client API and callbacks.
-  - **`A2A.Agent.Runtime`** — pure functions for message processing. Creates
-    tasks, calls `handle_message/2`, maps reply tuples to state transitions.
-    Also handles task continuation (multi-turn) and stream wrapping.
-  - **`A2A.Agent.State`** — the internal GenServer state struct. Holds the
-    task map, context index, and optional task store reference. Provides
+  - **Agent.Runtime** (internal) — pure functions for message processing.
+    Creates tasks, calls `handle_message/2`, maps reply tuples to state
+    transitions. Also handles task continuation (multi-turn) and stream
+    wrapping.
+  - **Agent.State** (internal) — the internal GenServer state struct. Holds
+    the task map, context index, and optional task store reference. Provides
     helpers for task storage, retrieval, and state transitions.
 
   ## Task Lifecycle

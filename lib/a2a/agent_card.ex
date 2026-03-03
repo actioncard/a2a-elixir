@@ -4,7 +4,7 @@ defmodule A2A.AgentCard do
 
   Contains the agent's identity, capabilities, and skills as returned by
   `GET /.well-known/agent-card.json`. This is the wire-format struct used
-  by clients; server-side agents define their card via `A2A.Agent.agent_card/0`.
+  by clients; server-side agents define their card via the `agent_card/0` callback.
 
   ## Example
 
