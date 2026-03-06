@@ -28,10 +28,12 @@ defmodule A2A.ClientTest do
     "status" => %{"state" => "completed"},
     "history" => [
       %{
+        "messageId" => "m-1",
         "role" => "user",
         "parts" => [%{"kind" => "text", "text" => "Hello"}]
       },
       %{
+        "messageId" => "m-2",
         "role" => "agent",
         "parts" => [%{"kind" => "text", "text" => "Hi there!"}]
       }

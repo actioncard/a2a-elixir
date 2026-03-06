@@ -111,12 +111,11 @@ defmodule A2A.Agent.RuntimeTest do
       %{pid: pid}
     end
 
-    test "cancel/2 transitions task to canceled", %{pid: pid} do
+    test "cancel/2 returns not_cancelable for completed task", %{pid: pid} do
       msg = Message.new_user("to cancel")
       {:ok, task} = A2A.Test.EchoAgent.call(pid, msg)
-      assert :ok = A2A.Test.EchoAgent.cancel(pid, task.id)
-      {:ok, canceled} = A2A.Test.EchoAgent.get_task(pid, task.id)
-      assert canceled.status.state == :canceled
+      assert task.status.state == :completed
+      assert {:error, :not_cancelable} = A2A.Test.EchoAgent.cancel(pid, task.id)
     end
 
     test "cancel/2 returns error for unknown task", %{pid: pid} do

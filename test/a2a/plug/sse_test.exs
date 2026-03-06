@@ -24,6 +24,7 @@ defmodule A2A.Plug.SSETest do
   defp message_params(text \\ "hello") do
     %{
       "message" => %{
+        "messageId" => "msg-test",
         "role" => "user",
         "parts" => [%{"kind" => "text", "text" => text}]
       }

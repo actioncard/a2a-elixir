@@ -305,32 +305,36 @@ defmodule A2A.Agent do
       def handle_call({:cancel, task_id}, _from, state) do
         case A2A.Agent.State.get_task(state, task_id) do
           {:ok, task} ->
-            context = %{
-              task_id: task.id,
-              context_id: task.context_id,
-              history: task.history,
-              metadata: task.metadata
-            }
+            if task.status.state in [:completed, :canceled, :failed] do
+              {:reply, {:error, :not_cancelable}, state}
+            else
+              context = %{
+                task_id: task.id,
+                context_id: task.context_id,
+                history: task.history,
+                metadata: task.metadata
+              }
 
-            span_meta = %{
-              agent: __MODULE__,
-              task_id: task.id,
-              context_id: task.context_id
-            }
+              span_meta = %{
+                agent: __MODULE__,
+                task_id: task.id,
+                context_id: task.context_id
+              }
 
-            result =
-              :telemetry.span([:a2a, :agent, :cancel], span_meta, fn ->
-                {A2A.Agent.Runtime.run_cancel(__MODULE__, context), span_meta}
-              end)
+              result =
+                :telemetry.span([:a2a, :agent, :cancel], span_meta, fn ->
+                  {A2A.Agent.Runtime.run_cancel(__MODULE__, context), span_meta}
+                end)
 
-            case result do
-              :ok ->
-                task = A2A.Agent.State.transition(task, :canceled)
-                state = A2A.Agent.State.put_task(state, task)
-                {:reply, :ok, state}
+              case result do
+                :ok ->
+                  task = A2A.Agent.State.transition(task, :canceled)
+                  state = A2A.Agent.State.put_task(state, task)
+                  {:reply, :ok, state}
 
-              {:error, reason} ->
-                {:reply, {:error, reason}, state}
+                {:error, reason} ->
+                  {:reply, {:error, reason}, state}
+              end
             end
 
           {:error, :not_found} ->

@@ -408,6 +408,7 @@ defmodule A2A.Plug.AuthTest do
           "method" => "message/send",
           "params" => %{
             "message" => %{
+              "messageId" => "msg-test",
               "role" => "user",
               "parts" => [%{"kind" => "text", "text" => "hello"}]
             }

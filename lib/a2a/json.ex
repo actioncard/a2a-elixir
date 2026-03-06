@@ -399,13 +399,15 @@ defmodule A2A.JSON do
   end
 
   def decode(map, :message) do
-    with {:ok, role_str} <- require_field(map, "role"),
+    with {:ok, message_id} <- require_field(map, "messageId"),
+         {:ok, role_str} <- require_field(map, "role"),
          {:ok, role} <- decode_role(role_str),
          {:ok, parts_list} <- require_field(map, "parts"),
+         :ok <- require_non_empty(parts_list, "parts"),
          {:ok, parts} <- decode_list(parts_list, :part) do
       {:ok,
        %A2A.Message{
-         message_id: Map.get(map, "messageId"),
+         message_id: message_id,
          role: role,
          parts: parts,
          task_id: Map.get(map, "taskId"),
@@ -637,6 +639,9 @@ defmodule A2A.JSON do
       :error -> {:error, {:missing_field, field}}
     end
   end
+
+  defp require_non_empty([], field), do: {:error, {:empty_field, field}}
+  defp require_non_empty([_ | _], _field), do: :ok
 
   defp decode_role(str) when is_map_key(@string_to_role, str) do
     {:ok, @string_to_role[str]}
