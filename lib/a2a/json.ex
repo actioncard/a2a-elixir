@@ -432,15 +432,15 @@ defmodule A2A.JSON do
   end
 
   def decode(map, :file_content) do
-    bytes_str = Map.get(map, "bytes")
+    bytes_str = Map.get(map, "bytes") || Map.get(map, "fileWithBytes")
 
     with {:ok, bytes} <- decode_base64(bytes_str) do
       {:ok,
        %A2A.FileContent{
          name: Map.get(map, "name"),
-         mime_type: Map.get(map, "mimeType"),
+         mime_type: Map.get(map, "mimeType") || Map.get(map, "mediaType"),
          bytes: bytes,
-         uri: Map.get(map, "uri")
+         uri: Map.get(map, "uri") || Map.get(map, "fileWithUri")
        }}
     end
   end

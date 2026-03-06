@@ -50,9 +50,7 @@ base_url = "http://localhost:#{port}"
 
 {:ok, _} =
   Bandit.start_link(
-    plug:
-      {A2A.Plug,
-       agent: TCK.Agent, base_url: base_url, agent_card_opts: [protocol_version: "0.2.0"]},
+    plug: {A2A.Plug, agent: TCK.Agent, base_url: base_url},
     port: port,
     startup_log: false
   )
