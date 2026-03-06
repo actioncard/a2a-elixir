@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-03-06
+
+### Added
+
+- Telemetry instrumentation for call, message, cancel, and task transitions
+- Security scheme data modeling (`A2A.SecurityScheme.*` structs) on `AgentCard`
+- Auth middleware (`A2A.Plug.Auth`) — Bearer, Basic, API key, OAuth2, OpenID Connect
+- TCK compliance across all categories (mandatory, capabilities, quality, features)
+- TCK results posted as PR comments in CI
+
+### Fixed
+
+- Accept v1.0 field names (`bytes`/`uri`) in `FileContent` decoding
+- Reject messages with missing `messageId` or empty `parts` per spec
+- Reject negative `historyLength` on all methods
+- Reject cancel on tasks in terminal states (completed/canceled/failed)
+
+### Changed
+
+- CI runs full TCK suite (`bin/tck all`) instead of mandatory only
+
 ## [0.1.1] - 2026-03-03
 
 ### Added

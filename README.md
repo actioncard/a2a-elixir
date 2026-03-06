@@ -127,7 +127,7 @@ Add `a2a` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:a2a, "~> 0.1.0"}
+    {:a2a, "~> 0.2.0"}
   ]
 end
 ```
@@ -139,7 +139,7 @@ Include only what you need:
 ```elixir
 def deps do
   [
-    {:a2a, "~> 0.1.0"},
+    {:a2a, "~> 0.2.0"},
 
     # For serving A2A endpoints
     {:plug, "~> 1.16"},
