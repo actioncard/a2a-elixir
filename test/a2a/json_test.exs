@@ -355,6 +355,26 @@ defmodule A2A.JSONTest do
       assert fc.uri == "https://example.com/f"
       assert fc.bytes == nil
     end
+
+    test "accepts v1.0 field names as aliases" do
+      encoded = Base.encode64("hello")
+
+      {:ok, fc} =
+        JSON.decode(
+          %{
+            "fileWithBytes" => encoded,
+            "fileWithUri" => "https://example.com/f",
+            "mediaType" => "text/plain",
+            "name" => "f.txt"
+          },
+          :file_content
+        )
+
+      assert fc.bytes == "hello"
+      assert fc.uri == "https://example.com/f"
+      assert fc.mime_type == "text/plain"
+      assert fc.name == "f.txt"
+    end
   end
 
   describe "decode :message" do
