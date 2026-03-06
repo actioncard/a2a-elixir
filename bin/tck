@@ -89,6 +89,11 @@ echo "========================================"
 
 TCK_ARGS="--sut-url $SUT_URL --category $CATEGORY"
 
+# Known upstream TCK bugs — deselect until fixed
+export PYTEST_ADDOPTS="\
+--deselect tests/mandatory/jsonrpc/test_a2a_error_codes_enhanced.py::test_push_notification_not_supported_error_32003_enhanced \
+--deselect tests/optional/capabilities/test_transport_specific_features.py::TestMultiModalFeatures::test_binary_data_handling"
+
 cd "$TCK_DIR"
 export A2A_AUTH_TYPE=bearer
 export A2A_AUTH_TOKEN="${A2A_TCK_TOKEN:-tck-test-token}"
