@@ -7,6 +7,47 @@ current functionality.
 
 ---
 
+## TCK Compliance
+
+CI runs `bin/tck all` to exercise every
+[A2A TCK](https://github.com/a2aproject/a2a-tck) category. Quality and feature
+failures are informational (don't block CI); mandatory and capability failures
+are fatal.
+
+### Currently Passing
+
+| Category | What it covers | Notes |
+|----------|----------------|-------|
+| **mandatory / jsonrpc** | JSON-RPC 2.0 compliance, error codes, protocol violations | — |
+| **mandatory / protocol** | Agent card, message send, tasks get/list/cancel, state transitions | Extended card tests skip (not implemented) |
+| **mandatory / security** | Auth enforcement, auth compliance v0.3.0, agent card security | TLS tests skip (HTTP in test); in-task auth skips |
+| **capabilities** | Streaming method validation | Only streaming declared; other capability tests skip |
+| **quality** | Concurrency, resilience, edge cases | Informational |
+| **features** | Agent card utils, business logic, task ID refs | Informational |
+
+### Skipped (Expected)
+
+| Tests | Reason | Unblocked by |
+|-------|--------|--------------|
+| Extended agent card | `supportsAuthenticatedExtendedCard` not declared | Authenticated Extended Card (below) |
+| In-task authentication | Agent doesn't trigger `auth-required` state | Optional — agent-level decision |
+| TLS / certificate validation | TCK server runs plain HTTP on localhost | Deploy-time concern, not library |
+| Push notification capabilities | `pushNotifications` not declared | Push Notifications (below) |
+| Transport equivalence | Single transport (JSON-RPC only) | gRPC / REST Transport Bindings (below) |
+| OAuth2 metadata URL | No OAuth2 scheme configured | Client-Side OAuth 2.0 Flows (below) |
+
+### Roadmap: Feature → TCK Tests Unlocked
+
+| # | Feature | TCK tests enabled |
+|---|---------|-------------------|
+| 1 | **Push Notifications** | `capabilities/` push notification tests; mandatory push config method tests |
+| 2 | **Authenticated Extended Card** | `mandatory/protocol/test_extended_agent_card.py`; `capabilities/` extended card tests |
+| 3 | **gRPC Transport Binding** | `transport-equivalence` category (functional equivalence across transports) |
+| 4 | **REST Transport Binding** | `transport-equivalence` category |
+| 5 | **Task Resubscribe Streaming** | `capabilities/` resubscribe streaming tests |
+
+---
+
 ## Protocol
 
 ### Push Notifications
@@ -149,19 +190,6 @@ in external catalogs.
 
 ## Security
 
-### Auth Plug Middleware (`A2A.Plug.Auth`)
-
-A composable Plug that:
-
-- Reads `securitySchemes` from the agent card
-- Validates credentials on incoming requests (Bearer token check, API key
-  lookup, etc.)
-- Returns `401` / `403` for invalid/missing credentials
-- Passes verified identity to the agent via `context.metadata`
-
-Should be a separate Plug that users compose before `A2A.Plug` — the library
-provides middleware, users supply credential verification logic.
-
 ### Client-Side OAuth 2.0 Flows
 
 `A2A.Client` already supports Bearer/API key auth via Req options:
@@ -197,12 +225,10 @@ verification. Not yet implemented. Would require:
 
 ### Recommended Security Order
 
-1. ~~AgentCard security fields (data modeling, no runtime changes)~~ ✓
-2. Auth plug middleware (Bearer/API key — simplest schemes first)
-3. Agent card signature verification
-4. Authenticated extended card endpoint
-5. Client-side OAuth 2.0 flows
-6. Task-level access control
+1. Agent card signature verification
+2. Authenticated extended card endpoint
+3. Client-side OAuth 2.0 flows
+4. Task-level access control
 
 ---
 

@@ -155,6 +155,9 @@ if Code.ensure_loaded?(Plug) do
           do: Map.merge(opts.metadata, conn_metadata),
           else: opts.metadata
 
+      auth = Map.get(overrides, :auth)
+      metadata = if auth, do: Map.put(metadata, "a2a.auth", auth), else: metadata
+
       %{opts | base_url: base_url, metadata: metadata}
     end
 

@@ -2,7 +2,7 @@
 #
 # Runs the A2A TCK (Technology Compatibility Kit) against a local server.
 #
-# Usage: bin/tck [mandatory|capabilities|quality|features|all]
+# Usage: bin/tck [mandatory|capabilities|transport-equivalence|quality|features|all]
 #
 # Prerequisites: uv or pip (Python package manager)
 
@@ -86,12 +86,11 @@ echo ""
 echo "Running TCK (category: $CATEGORY)..."
 echo "========================================"
 
-TCK_ARGS="--sut-url $SUT_URL"
-if [ "$CATEGORY" != "all" ]; then
-  TCK_ARGS="$TCK_ARGS --category $CATEGORY"
-fi
+TCK_ARGS="--sut-url $SUT_URL --category $CATEGORY"
 
 cd "$TCK_DIR"
+export A2A_AUTH_TYPE=bearer
+export A2A_AUTH_TOKEN="${A2A_TCK_TOKEN:-tck-test-token}"
 if [ "$USE_UV" = true ]; then
   uv run ./run_tck.py $TCK_ARGS 2>&1
 else

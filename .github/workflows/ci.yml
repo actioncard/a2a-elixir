@@ -136,39 +136,8 @@ jobs:
 
       - run: mix compile
 
-      - name: Start TCK server
-        run: mix run test/tck/server.exs &
-
-      - name: Wait for server
-        run: |
-          for i in $(seq 1 30); do
-            if curl -sf http://localhost:9999/.well-known/agent-card.json > /dev/null 2>&1; then
-              echo "Server ready"
-              exit 0
-            fi
-            sleep 1
-          done
-          echo "Server failed to start"
-          exit 1
-
-      - name: Clone TCK
-        run: |
-          if [ ! -d .tck ]; then
-            git clone https://github.com/a2aproject/a2a-tck.git .tck
-          fi
-
-      - name: Install TCK dependencies
-        run: |
-          cd .tck
-          uv venv --clear
-          uv pip install -e .
-
-      - name: Run TCK (mandatory)
-        run: |
-          cd .tck
-          uv run ./run_tck.py \
-            --sut-url http://localhost:9999 \
-            --category mandatory
+      - name: Run TCK (all categories)
+        run: bin/tck all
 
   publish:
     name: Publish to Hex
