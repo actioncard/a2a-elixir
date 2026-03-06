@@ -213,15 +213,25 @@ A2A_TCK_PORT=8080 mix run test/tck/server.exs
 
 The TCK runs on every PR in CI. Reports are uploaded as build artifacts.
 
-## Roadmap
+## Not Yet Implemented
 
-See [SPEC.md](SPEC.md) for protocol coverage and implementation status.
+Key A2A spec features not yet covered:
+
+- **Push notifications** — webhook delivery on task state changes
+- **Authenticated extended cards** — per-client capability disclosure
+- **REST / gRPC transports** — only JSON-RPC is supported
+- **Version negotiation** — hardcoded to A2A v0.3
+- **Task resubscribe** — reconnecting to active SSE streams
+- **Security schemes** — auth middleware, agent card signatures, task-level ACL
+
+See [SPEC.md](SPEC.md) for full details and roadmap.
 
 ## Links
 
 - [A2A Protocol Specification](https://google.github.io/A2A/)
 - [Hex Package](https://hex.pm/packages/a2a)
 - [Documentation](https://hexdocs.pm/a2a)
+- [`a2a_ex`](https://hex.pm/packages/a2a_ex) — alternative Elixir implementation focused on protocol codec and transport (REST + JSON-RPC); complements this library's agent runtime and OTP integration
 
 ## License
 
