@@ -39,7 +39,8 @@ if [ ! -d "$TCK_DIR" ]; then
   echo "Cloning A2A TCK..."
   git clone https://github.com/a2aproject/a2a-tck.git "$TCK_DIR"
 else
-  echo "TCK already cloned in $TCK_DIR"
+  echo "Updating A2A TCK..."
+  git -C "$TCK_DIR" pull --ff-only 2>/dev/null || true
 fi
 
 # --- Install Python deps ---
