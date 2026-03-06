@@ -23,7 +23,8 @@ defmodule A2A.AgentCard do
   @type capabilities :: %{
           optional(:streaming) => boolean(),
           optional(:push_notifications) => boolean(),
-          optional(:state_transition_history) => boolean()
+          optional(:state_transition_history) => boolean(),
+          optional(:extended_agent_card) => boolean()
         }
 
   @type provider :: %{
@@ -50,7 +51,9 @@ defmodule A2A.AgentCard do
           documentation_url: String.t() | nil,
           icon_url: String.t() | nil,
           protocol_version: String.t() | nil,
-          supported_interfaces: [supported_interface()]
+          supported_interfaces: [supported_interface()],
+          security_schemes: %{String.t() => A2A.SecurityScheme.t()},
+          security: [%{String.t() => [String.t()]}]
         }
 
   @enforce_keys [:name, :description, :url, :version, :skills]
@@ -67,6 +70,8 @@ defmodule A2A.AgentCard do
     capabilities: %{},
     default_input_modes: ["text/plain"],
     default_output_modes: ["text/plain"],
-    supported_interfaces: []
+    supported_interfaces: [],
+    security_schemes: %{},
+    security: []
   ]
 end

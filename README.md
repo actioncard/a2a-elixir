@@ -222,7 +222,7 @@ Key A2A spec features not yet covered:
 - **REST / gRPC transports** — only JSON-RPC is supported
 - **Version negotiation** — hardcoded to A2A v0.3
 - **Task resubscribe** — reconnecting to active SSE streams
-- **Security schemes** — auth middleware, agent card signatures, task-level ACL
+- **Security middleware** — auth plug, agent card signatures, task-level ACL (security scheme data modeling is complete)
 
 See [SPEC.md](SPEC.md) for full details and roadmap.
 

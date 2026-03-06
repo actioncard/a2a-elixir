@@ -240,6 +240,8 @@ defmodule A2A.JSON do
   - `:supported_interfaces` — list of `%{url: ..., protocol_binding: ...,
     protocol_version: ...}` maps. Defaults to a single JSON-RPC interface
     derived from `:url`.
+  - `:security_schemes` — `%{name => %SecurityScheme.X{}}` map
+  - `:security` — list of `%{name => scopes}` maps (OpenAPI-style)
   """
   @spec encode_agent_card(A2A.Agent.card(), keyword()) :: map()
   def encode_agent_card(card, opts \\ []) do
@@ -251,6 +253,9 @@ defmodule A2A.JSON do
     interfaces =
       Keyword.get(opts, :supported_interfaces) ||
         [%{url: url, protocol_binding: "jsonrpc", protocol_version: "2.0"}]
+
+    security_schemes = Keyword.get(opts, :security_schemes, %{})
+    security = Keyword.get(opts, :security, [])
 
     skills =
       Enum.map(card.skills, fn skill ->
@@ -280,6 +285,8 @@ defmodule A2A.JSON do
       |> put_unless_nil("documentationUrl", Keyword.get(opts, :documentation_url))
       |> put_unless_nil("iconUrl", Keyword.get(opts, :icon_url))
       |> put_unless_nil("protocolVersion", Keyword.get(opts, :protocol_version))
+      |> put_unless_empty("securitySchemes", encode_security_schemes(security_schemes))
+      |> put_unless_empty("security", security)
 
     map
   end
@@ -326,7 +333,9 @@ defmodule A2A.JSON do
          documentation_url: Map.get(map, "documentationUrl"),
          icon_url: Map.get(map, "iconUrl"),
          protocol_version: Map.get(map, "protocolVersion"),
-         supported_interfaces: decode_card_interfaces(Map.get(map, "supportedInterfaces", []))
+         supported_interfaces: decode_card_interfaces(Map.get(map, "supportedInterfaces", [])),
+         security_schemes: decode_card_security_schemes(Map.get(map, "securitySchemes", %{})),
+         security: Map.get(map, "security", [])
        }}
     end
   end
@@ -524,7 +533,8 @@ defmodule A2A.JSON do
     encode_known_keys(caps, [
       {"streaming", :streaming},
       {"pushNotifications", :push_notifications},
-      {"stateTransitionHistory", :state_transition_history}
+      {"stateTransitionHistory", :state_transition_history},
+      {"extendedAgentCard", :extended_agent_card}
     ])
   end
 
@@ -545,6 +555,45 @@ defmodule A2A.JSON do
       {"organization", :organization},
       {"url", :url}
     ])
+  end
+
+  defp encode_security_schemes(schemes) when map_size(schemes) == 0, do: %{}
+
+  defp encode_security_schemes(schemes) when is_map(schemes) do
+    Map.new(schemes, fn {name, scheme} ->
+      {name, encode_security_scheme(scheme)}
+    end)
+  end
+
+  defp encode_security_scheme(%A2A.SecurityScheme.APIKey{} = s) do
+    %{"apiKeySecurityScheme" => %{"name" => s.name, "in" => s.in}}
+  end
+
+  defp encode_security_scheme(%A2A.SecurityScheme.HTTPAuth{} = s) do
+    %{"httpAuthSecurityScheme" => %{"scheme" => s.scheme}}
+  end
+
+  defp encode_security_scheme(%A2A.SecurityScheme.OAuth2{} = s) do
+    inner = %{"flows" => s.flows}
+
+    inner =
+      if s.oauth2_metadata_url,
+        do: Map.put(inner, "oauth2MetadataUrl", s.oauth2_metadata_url),
+        else: inner
+
+    %{"oauth2SecurityScheme" => inner}
+  end
+
+  defp encode_security_scheme(%A2A.SecurityScheme.OpenIDConnect{} = s) do
+    %{
+      "openIdConnectSecurityScheme" => %{
+        "openIdConnectUrl" => s.open_id_connect_url
+      }
+    }
+  end
+
+  defp encode_security_scheme(%A2A.SecurityScheme.MutualTLS{}) do
+    %{"mtlsSecurityScheme" => %{}}
   end
 
   @doc """
@@ -705,7 +754,8 @@ defmodule A2A.JSON do
     decode_known_keys(map, [
       {"streaming", :streaming},
       {"pushNotifications", :push_notifications},
-      {"stateTransitionHistory", :state_transition_history}
+      {"stateTransitionHistory", :state_transition_history},
+      {"extendedAgentCard", :extended_agent_card}
     ])
   end
 
@@ -728,6 +778,42 @@ defmodule A2A.JSON do
       {"organization", :organization},
       {"url", :url}
     ])
+  end
+
+  defp decode_card_security_schemes(schemes) when map_size(schemes) == 0, do: %{}
+
+  defp decode_card_security_schemes(schemes) when is_map(schemes) do
+    Map.new(schemes, fn {name, scheme_map} ->
+      {name, decode_security_scheme(scheme_map)}
+    end)
+  end
+
+  defp decode_security_scheme(%{"apiKeySecurityScheme" => inner}) do
+    %A2A.SecurityScheme.APIKey{
+      name: Map.fetch!(inner, "name"),
+      in: Map.fetch!(inner, "in")
+    }
+  end
+
+  defp decode_security_scheme(%{"httpAuthSecurityScheme" => inner}) do
+    %A2A.SecurityScheme.HTTPAuth{scheme: Map.fetch!(inner, "scheme")}
+  end
+
+  defp decode_security_scheme(%{"oauth2SecurityScheme" => inner}) do
+    %A2A.SecurityScheme.OAuth2{
+      flows: Map.fetch!(inner, "flows"),
+      oauth2_metadata_url: Map.get(inner, "oauth2MetadataUrl")
+    }
+  end
+
+  defp decode_security_scheme(%{"openIdConnectSecurityScheme" => inner}) do
+    %A2A.SecurityScheme.OpenIDConnect{
+      open_id_connect_url: Map.fetch!(inner, "openIdConnectUrl")
+    }
+  end
+
+  defp decode_security_scheme(%{"mtlsSecurityScheme" => _}) do
+    %A2A.SecurityScheme.MutualTLS{}
   end
 
   defp decode_known_keys(source, mappings) do

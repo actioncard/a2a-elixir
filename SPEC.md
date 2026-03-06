@@ -149,22 +149,6 @@ in external catalogs.
 
 ## Security
 
-### AgentCard Security Fields
-
-`%A2A.AgentCard{}` has no `security_schemes` or `security` fields.
-`A2A.JSON.encode_agent_card/2` doesn't encode them. Pure data modeling — no
-runtime behavior, just the ability to declare auth requirements in the card.
-
-The spec defines these scheme types (aligned with OpenAPI):
-
-| Scheme Type     | Use Case                                               |
-| --------------- | ------------------------------------------------------ |
-| API Key         | Simple token in header/query                           |
-| HTTP Auth       | Bearer tokens, Basic auth                              |
-| OAuth 2.0       | Authorization Code, Client Credentials, Device Code    |
-| OpenID Connect  | OIDC discovery-based auth                              |
-| Mutual TLS      | Certificate-based bidirectional auth                   |
-
 ### Auth Plug Middleware (`A2A.Plug.Auth`)
 
 A composable Plug that:
@@ -213,7 +197,7 @@ verification. Not yet implemented. Would require:
 
 ### Recommended Security Order
 
-1. AgentCard security fields (data modeling, no runtime changes)
+1. ~~AgentCard security fields (data modeling, no runtime changes)~~ ✓
 2. Auth plug middleware (Bearer/API key — simplest schemes first)
 3. Agent card signature verification
 4. Authenticated extended card endpoint

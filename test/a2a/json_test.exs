@@ -1106,6 +1106,202 @@ defmodule A2A.JSONTest do
   end
 
   # -------------------------------------------------------------------
+  # Security Schemes
+  # -------------------------------------------------------------------
+
+  describe "encode_agent_card with security schemes" do
+    test "omits securitySchemes when empty" do
+      card = %{name: "x", description: "x", version: "1", skills: [], opts: []}
+      map = JSON.encode_agent_card(card, url: "https://example.com")
+      refute Map.has_key?(map, "securitySchemes")
+      refute Map.has_key?(map, "security")
+    end
+
+    test "encodes all 5 scheme types" do
+      card = %{name: "x", description: "x", version: "1", skills: [], opts: []}
+
+      schemes = %{
+        "apikey" => %A2A.SecurityScheme.APIKey{name: "x-api-key", in: "header"},
+        "bearer" => %A2A.SecurityScheme.HTTPAuth{scheme: "bearer"},
+        "oauth" => %A2A.SecurityScheme.OAuth2{
+          flows: %{"authorizationCode" => %{"authorizationUrl" => "https://auth.example.com"}},
+          oauth2_metadata_url: "https://auth.example.com/.well-known/oauth"
+        },
+        "oidc" => %A2A.SecurityScheme.OpenIDConnect{
+          open_id_connect_url: "https://auth.example.com/.well-known/openid-configuration"
+        },
+        "mtls" => %A2A.SecurityScheme.MutualTLS{}
+      }
+
+      security = [%{"bearer" => []}]
+
+      map =
+        JSON.encode_agent_card(card,
+          url: "https://example.com",
+          security_schemes: schemes,
+          security: security
+        )
+
+      assert %{
+               "apiKeySecurityScheme" => %{
+                 "name" => "x-api-key",
+                 "in" => "header"
+               }
+             } = map["securitySchemes"]["apikey"]
+
+      assert %{
+               "httpAuthSecurityScheme" => %{"scheme" => "bearer"}
+             } = map["securitySchemes"]["bearer"]
+
+      assert %{
+               "oauth2SecurityScheme" => %{
+                 "flows" => %{"authorizationCode" => _},
+                 "oauth2MetadataUrl" => "https://auth.example.com/.well-known/oauth"
+               }
+             } = map["securitySchemes"]["oauth"]
+
+      assert %{
+               "openIdConnectSecurityScheme" => %{
+                 "openIdConnectUrl" => "https://auth.example.com/.well-known/openid-configuration"
+               }
+             } = map["securitySchemes"]["oidc"]
+
+      assert %{"mtlsSecurityScheme" => %{}} = map["securitySchemes"]["mtls"]
+
+      assert map["security"] == [%{"bearer" => []}]
+    end
+
+    test "encodes extendedAgentCard capability" do
+      card = %{name: "x", description: "x", version: "1", skills: [], opts: []}
+
+      map =
+        JSON.encode_agent_card(card,
+          url: "https://example.com",
+          capabilities: %{extended_agent_card: true}
+        )
+
+      assert map["capabilities"]["extendedAgentCard"] == true
+    end
+  end
+
+  describe "decode_agent_card with security schemes" do
+    test "decodes all 5 scheme types" do
+      map = %{
+        "name" => "x",
+        "description" => "x",
+        "url" => "https://example.com",
+        "version" => "1",
+        "skills" => [],
+        "securitySchemes" => %{
+          "apikey" => %{
+            "apiKeySecurityScheme" => %{"name" => "x-api-key", "in" => "header"}
+          },
+          "bearer" => %{
+            "httpAuthSecurityScheme" => %{"scheme" => "bearer"}
+          },
+          "oauth" => %{
+            "oauth2SecurityScheme" => %{
+              "flows" => %{"authorizationCode" => %{}},
+              "oauth2MetadataUrl" => "https://meta.example.com"
+            }
+          },
+          "oidc" => %{
+            "openIdConnectSecurityScheme" => %{
+              "openIdConnectUrl" => "https://oidc.example.com"
+            }
+          },
+          "mtls" => %{"mtlsSecurityScheme" => %{}}
+        },
+        "security" => [%{"bearer" => []}, %{"apikey" => []}]
+      }
+
+      {:ok, card} = JSON.decode_agent_card(map)
+
+      assert %A2A.SecurityScheme.APIKey{name: "x-api-key", in: "header"} =
+               card.security_schemes["apikey"]
+
+      assert %A2A.SecurityScheme.HTTPAuth{scheme: "bearer"} =
+               card.security_schemes["bearer"]
+
+      assert %A2A.SecurityScheme.OAuth2{
+               flows: %{"authorizationCode" => %{}},
+               oauth2_metadata_url: "https://meta.example.com"
+             } = card.security_schemes["oauth"]
+
+      assert %A2A.SecurityScheme.OpenIDConnect{
+               open_id_connect_url: "https://oidc.example.com"
+             } = card.security_schemes["oidc"]
+
+      assert %A2A.SecurityScheme.MutualTLS{} = card.security_schemes["mtls"]
+
+      assert card.security == [%{"bearer" => []}, %{"apikey" => []}]
+    end
+
+    test "defaults to empty when absent" do
+      map = %{
+        "name" => "x",
+        "description" => "x",
+        "url" => "https://example.com",
+        "version" => "1",
+        "skills" => []
+      }
+
+      {:ok, card} = JSON.decode_agent_card(map)
+      assert card.security_schemes == %{}
+      assert card.security == []
+    end
+
+    test "decodes extendedAgentCard capability" do
+      map = %{
+        "name" => "x",
+        "description" => "x",
+        "url" => "https://example.com",
+        "version" => "1",
+        "skills" => [],
+        "capabilities" => %{"extendedAgentCard" => true}
+      }
+
+      {:ok, card} = JSON.decode_agent_card(map)
+      assert card.capabilities.extended_agent_card == true
+    end
+
+    test "roundtrip with security schemes" do
+      card = %{
+        name: "secure-agent",
+        description: "Agent with security",
+        version: "1.0.0",
+        skills: [
+          %{id: "s1", name: "Skill", description: "Does things", tags: []}
+        ],
+        opts: []
+      }
+
+      schemes = %{
+        "bearer" => %A2A.SecurityScheme.HTTPAuth{scheme: "bearer"},
+        "apikey" => %A2A.SecurityScheme.APIKey{name: "x-api-key", in: "header"}
+      }
+
+      security = [%{"bearer" => []}]
+
+      encoded =
+        JSON.encode_agent_card(card,
+          url: "https://example.com",
+          security_schemes: schemes,
+          security: security,
+          capabilities: %{extended_agent_card: true, streaming: true}
+        )
+
+      {:ok, decoded} = JSON.decode_agent_card(encoded)
+
+      assert decoded.name == "secure-agent"
+      assert decoded.security_schemes == schemes
+      assert decoded.security == security
+      assert decoded.capabilities.extended_agent_card == true
+      assert decoded.capabilities.streaming == true
+    end
+  end
+
+  # -------------------------------------------------------------------
   # Error propagation in nested structures
   # -------------------------------------------------------------------
 
