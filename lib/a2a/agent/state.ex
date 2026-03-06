@@ -19,7 +19,21 @@ defmodule A2A.Agent.State do
   @spec transition(A2A.Task.t(), A2A.Task.Status.state(), A2A.Message.t() | nil) ::
           A2A.Task.t()
   def transition(task, new_state, message \\ nil) do
-    %{task | status: A2A.Task.Status.new(new_state, message)}
+    old_state = if task.status, do: task.status.state
+    task = %{task | status: A2A.Task.Status.new(new_state, message)}
+
+    :telemetry.execute(
+      [:a2a, :task, :transition],
+      %{system_time: System.system_time()},
+      %{
+        task_id: task.id,
+        context_id: task.context_id,
+        from: old_state,
+        to: new_state
+      }
+    )
+
+    task
   end
 
   @doc """

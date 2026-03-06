@@ -81,7 +81,22 @@ defmodule A2A do
 
   def call(agent, %A2A.Message{} = message, opts) do
     {timeout, opts} = Keyword.pop(opts, :timeout, 60_000)
-    GenServer.call(agent, {:message, message, opts}, timeout)
+    meta = %{agent: agent, streaming: false}
+
+    :telemetry.span([:a2a, :agent, :call], meta, fn ->
+      case GenServer.call(agent, {:message, message, opts}, timeout) do
+        {:ok, task} = result ->
+          {result,
+           Map.merge(meta, %{
+             task_id: task.id,
+             status: task.status.state,
+             context_id: task.context_id
+           })}
+
+        {:error, reason} = result ->
+          {result, Map.put(meta, :error, reason)}
+      end
+    end)
   end
 
   @doc """
@@ -111,16 +126,27 @@ defmodule A2A do
 
   def stream(agent, %A2A.Message{} = message, opts) do
     {timeout, opts} = Keyword.pop(opts, :timeout, 60_000)
+    meta = %{agent: agent, streaming: true}
 
-    case GenServer.call(agent, {:message, message, opts}, timeout) do
-      {:ok, %A2A.Task{metadata: %{stream: enum}} = task} ->
-        {:ok, task, enum}
+    :telemetry.span([:a2a, :agent, :call], meta, fn ->
+      case GenServer.call(agent, {:message, message, opts}, timeout) do
+        {:ok, %A2A.Task{metadata: %{stream: enum}} = task} ->
+          result = {:ok, task, enum}
 
-      {:ok, task} ->
-        {:error, {:not_streaming, task}}
+          {result,
+           Map.merge(meta, %{
+             task_id: task.id,
+             status: task.status.state,
+             context_id: task.context_id
+           })}
 
-      {:error, reason} ->
-        {:error, reason}
-    end
+        {:ok, task} ->
+          result = {:error, {:not_streaming, task}}
+          {result, Map.put(meta, :error, {:not_streaming, task})}
+
+        {:error, reason} = result ->
+          {result, Map.put(meta, :error, reason)}
+      end
+    end)
   end
 end

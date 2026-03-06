@@ -2,7 +2,8 @@
 
 Unimplemented work organized by category. Phases 1-7 (core types, agent
 runtime, JSON codec, JSON-RPC, HTTP server, HTTP client, registry/supervisor)
-are complete. See the codebase and README for current functionality.
+and telemetry instrumentation are complete. See the codebase and README for
+current functionality.
 
 ---
 
@@ -255,35 +256,6 @@ able to auto-retry with appropriate credentials:
 ---
 
 ## Observability
-
-### Telemetry Events
-
-The library declares `{:telemetry, "~> 1.2"}` but emits zero events. Following
-the Ecto/Oban pattern (library emits, app wires up), add spans and events:
-
-Spans via `:telemetry.span/3`:
-
-```
-[:a2a, :agent, :call]     — wraps full A2A.call/3 lifecycle
-[:a2a, :agent, :message]  — wraps handle_message/2 callback
-[:a2a, :agent, :cancel]   — wraps handle_cancel/1 callback
-```
-
-Each span emits `start/stop/exception` with `%{duration, system_time}` and
-metadata `%{agent, task_id, context_id, status}`.
-
-Discrete events:
-
-```
-[:a2a, :task, :transition] — on every task state change
-  metadata: %{agent, task_id, from, to}
-```
-
-Emit sites: `process_message/4` in Agent.Runtime (message span),
-`A2A.call/3` and `A2A.stream/3` (call span), `transition/2` in Agent.State
-(transition event).
-
-Add an `A2A.Telemetry` module documenting all events as a public API contract.
 
 ### LiveDashboard Page (Optional)
 

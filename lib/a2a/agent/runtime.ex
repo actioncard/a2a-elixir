@@ -70,7 +70,16 @@ defmodule A2A.Agent.Runtime do
       metadata: task.metadata
     }
 
-    task = handle_reply(module.handle_message(message, context), task)
+    meta = %{agent: module, task_id: task.id, context_id: task.context_id}
+
+    reply =
+      :telemetry.span([:a2a, :agent, :message], meta, fn ->
+        result = module.handle_message(message, context)
+        reply_type = elem(result, 0)
+        {result, Map.put(meta, :reply_type, reply_type)}
+      end)
+
+    task = handle_reply(reply, task)
     state = State.track_context(state, task)
     {task, state}
   end

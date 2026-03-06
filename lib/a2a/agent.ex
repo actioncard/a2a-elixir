@@ -312,7 +312,18 @@ defmodule A2A.Agent do
               metadata: task.metadata
             }
 
-            case A2A.Agent.Runtime.run_cancel(__MODULE__, context) do
+            span_meta = %{
+              agent: __MODULE__,
+              task_id: task.id,
+              context_id: task.context_id
+            }
+
+            result =
+              :telemetry.span([:a2a, :agent, :cancel], span_meta, fn ->
+                {A2A.Agent.Runtime.run_cancel(__MODULE__, context), span_meta}
+              end)
+
+            case result do
               :ok ->
                 task = A2A.Agent.State.transition(task, :canceled)
                 state = A2A.Agent.State.put_task(state, task)

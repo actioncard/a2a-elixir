@@ -25,6 +25,7 @@ A2A gives you behaviour-based agents that run as GenServer processes. Define an 
 - **Agent registry** — `A2A.Registry` for skill-based agent discovery
 - **Supervision** — `A2A.AgentSupervisor` starts a fleet of agents with one call
 - **Pluggable storage** — `A2A.TaskStore` behaviour with built-in ETS implementation
+- **Telemetry** — `:telemetry` spans and events for calls, messages, cancels, and state transitions
 
 ## Quick Start
 
