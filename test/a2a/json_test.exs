@@ -402,23 +402,37 @@ defmodule A2A.JSONTest do
       assert msg.metadata == %{"key" => "val"}
     end
 
+    test "returns error for missing messageId" do
+      assert {:error, {:missing_field, "messageId"}} =
+               JSON.decode(%{"role" => "user", "parts" => [%{"text" => "hi"}]}, :message)
+    end
+
     test "returns error for missing role" do
       assert {:error, {:missing_field, "role"}} =
-               JSON.decode(%{"parts" => []}, :message)
+               JSON.decode(%{"messageId" => "m-1", "parts" => []}, :message)
     end
 
     test "returns error for invalid role" do
       assert {:error, {:invalid_role, "system"}} =
-               JSON.decode(%{"role" => "system", "parts" => []}, :message)
+               JSON.decode(%{"messageId" => "m-1", "role" => "system", "parts" => []}, :message)
     end
 
     test "returns error for missing parts" do
       assert {:error, {:missing_field, "parts"}} =
-               JSON.decode(%{"role" => "user"}, :message)
+               JSON.decode(%{"messageId" => "m-1", "role" => "user"}, :message)
+    end
+
+    test "returns error for empty parts" do
+      assert {:error, {:empty_field, "parts"}} =
+               JSON.decode(
+                 %{"messageId" => "m-1", "role" => "user", "parts" => []},
+                 :message
+               )
     end
 
     test "decodes v0.3 ROLE_USER format" do
       map = %{
+        "messageId" => "m-1",
         "role" => "ROLE_USER",
         "parts" => [%{"text" => "hi"}]
       }
@@ -429,6 +443,7 @@ defmodule A2A.JSONTest do
 
     test "decodes v0.3 ROLE_AGENT format" do
       map = %{
+        "messageId" => "m-1",
         "role" => "ROLE_AGENT",
         "parts" => [%{"text" => "hi"}]
       }
@@ -510,6 +525,7 @@ defmodule A2A.JSONTest do
       map = %{
         "state" => "working",
         "message" => %{
+          "messageId" => "m-1",
           "role" => "agent",
           "parts" => [%{"kind" => "text", "text" => "processing"}]
         }
@@ -542,7 +558,11 @@ defmodule A2A.JSONTest do
         "contextId" => "ctx-1",
         "status" => %{"state" => "completed"},
         "history" => [
-          %{"role" => "user", "parts" => [%{"kind" => "text", "text" => "hello"}]}
+          %{
+            "messageId" => "m-1",
+            "role" => "user",
+            "parts" => [%{"kind" => "text", "text" => "hello"}]
+          }
         ],
         "artifacts" => [
           %{"parts" => [%{"kind" => "text", "text" => "result"}]}
@@ -615,6 +635,7 @@ defmodule A2A.JSONTest do
     test "dispatches message" do
       map = %{
         "kind" => "message",
+        "messageId" => "m-1",
         "role" => "agent",
         "parts" => [%{"kind" => "text", "text" => "hi"}]
       }
@@ -1308,6 +1329,7 @@ defmodule A2A.JSONTest do
   describe "error propagation" do
     test "invalid part in message parts list" do
       map = %{
+        "messageId" => "m-1",
         "role" => "user",
         "parts" => [%{"kind" => "text", "text" => "ok"}, %{"kind" => "unknown"}]
       }

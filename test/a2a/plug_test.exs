@@ -23,6 +23,7 @@ defmodule A2A.PlugTest do
   defp message_params(text \\ "hello") do
     %{
       "message" => %{
+        "messageId" => "msg-test",
         "role" => "user",
         "parts" => [%{"kind" => "text", "text" => text}]
       }

@@ -12,6 +12,7 @@ defmodule A2A.JSONRPCTest do
   defp message_params(text \\ "hello") do
     %{
       "message" => %{
+        "messageId" => "msg-test",
         "role" => "user",
         "parts" => [%{"kind" => "text", "text" => text}]
       }

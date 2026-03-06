@@ -40,19 +40,29 @@ defmodule A2A.JSONRPC.Request do
   @spec validate_params(t()) :: :ok | {:error, Error.t()}
   def validate_params(%__MODULE__{method: method, params: params})
       when method in ["message/send", "message/stream"] do
-    if is_map(params["message"]) do
-      :ok
-    else
-      {:error, Error.invalid_params("\"message\" must be a JSON object")}
+    cond do
+      not is_map(params["message"]) ->
+        {:error, Error.invalid_params("\"message\" must be a JSON object")}
+
+      bad_history_length?(params) ->
+        {:error, Error.invalid_params("\"historyLength\" must be a non-negative integer")}
+
+      true ->
+        :ok
     end
   end
 
   def validate_params(%__MODULE__{method: method, params: params})
       when method in ["tasks/get", "tasks/cancel", "tasks/resubscribe"] do
-    if is_binary(params["id"]) do
-      :ok
-    else
-      {:error, Error.invalid_params("\"id\" must be a string")}
+    cond do
+      not is_binary(params["id"]) ->
+        {:error, Error.invalid_params("\"id\" must be a string")}
+
+      bad_history_length?(params) ->
+        {:error, Error.invalid_params("\"historyLength\" must be a non-negative integer")}
+
+      true ->
+        :ok
     end
   end
 
