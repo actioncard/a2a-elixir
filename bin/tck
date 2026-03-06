@@ -97,8 +97,10 @@ if [ "$USE_UV" = true ]; then
 else
   .venv/bin/python ./run_tck.py $TCK_ARGS 2>&1
 fi
+TCK_EXIT=$?
 cd ..
 
 echo ""
 echo "========================================"
 echo "TCK run complete."
+exit "$TCK_EXIT"
