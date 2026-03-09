@@ -226,12 +226,15 @@ Key A2A spec features not yet covered:
 
 See [SPEC.md](SPEC.md) for full details and roadmap.
 
+## Alternative Implementations
+
+[**a2a_ex**](https://github.com/lukaszsamson/a2a_ex) ([Hex](https://hex.pm/packages/a2a_ex)) takes a different approach to implementing A2A in Elixir. It supports both REST and JSON-RPC transports, covers the v0.3 and v1.0-rc specs, includes a protobuf-style JSON compatibility mode, and is end-to-end tested against the official JavaScript SDK. Where this library focuses on agent runtime and OTP integration, `a2a_ex` focuses on protocol codec and transport coverage — the two complement each other well.
+
 ## Links
 
 - [A2A Protocol Specification](https://google.github.io/A2A/)
 - [Hex Package](https://hex.pm/packages/a2a)
 - [Documentation](https://hexdocs.pm/a2a)
-- [`a2a_ex`](https://hex.pm/packages/a2a_ex) — alternative Elixir implementation focused on protocol codec and transport (REST + JSON-RPC); complements this library's agent runtime and OTP integration
 
 ## License
 
