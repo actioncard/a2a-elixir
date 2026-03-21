@@ -103,7 +103,7 @@ defmodule A2A.ClientTest do
       plug = fn conn ->
         {:ok, body, conn} = Plug.Conn.read_body(conn)
         decoded = Jason.decode!(body)
-        assert decoded["method"] == "message/send"
+        assert decoded["method"] == "SendMessage"
         assert decoded["params"]["message"]["role"] == "ROLE_USER"
 
         json_resp(conn, 200, jsonrpc_success(%{"task" => @task_json}))
@@ -211,7 +211,7 @@ defmodule A2A.ClientTest do
       plug = fn conn ->
         {:ok, body, conn} = Plug.Conn.read_body(conn)
         decoded = Jason.decode!(body)
-        assert decoded["method"] == "tasks/get"
+        assert decoded["method"] == "GetTask"
         assert decoded["params"]["id"] == "tsk-123"
 
         json_resp(conn, 200, jsonrpc_success(@task_json))
@@ -244,7 +244,7 @@ defmodule A2A.ClientTest do
       plug = fn conn ->
         {:ok, body, conn} = Plug.Conn.read_body(conn)
         decoded = Jason.decode!(body)
-        assert decoded["method"] == "tasks/cancel"
+        assert decoded["method"] == "CancelTask"
         assert decoded["params"]["id"] == "tsk-123"
 
         json_resp(conn, 200, jsonrpc_success(canceled_json))
@@ -338,6 +338,62 @@ defmodule A2A.ClientTest do
           {:ok, conn} = Plug.Conn.chunk(conn, data)
           conn
       end
+    end
+  end
+
+  # -------------------------------------------------------------------
+  # Method style
+  # -------------------------------------------------------------------
+
+  describe "method_style" do
+    test "default (:v1) sends PascalCase method names" do
+      plug = fn conn ->
+        {:ok, body, conn} = Plug.Conn.read_body(conn)
+        decoded = Jason.decode!(body)
+        assert decoded["method"] == "SendMessage"
+        json_resp(conn, 200, jsonrpc_success(%{"task" => @task_json}))
+      end
+
+      client = Client.new("https://agent.example.com", plug: plug)
+      assert {:ok, _task} = Client.send_message(client, "Hello!")
+    end
+
+    test "legacy mode sends slash-style method names" do
+      plug = fn conn ->
+        {:ok, body, conn} = Plug.Conn.read_body(conn)
+        decoded = Jason.decode!(body)
+        assert decoded["method"] == "message/send"
+        json_resp(conn, 200, jsonrpc_success(%{"task" => @task_json}))
+      end
+
+      client = Client.new("https://agent.example.com", plug: plug, method_style: :legacy)
+      assert {:ok, _task} = Client.send_message(client, "Hello!")
+    end
+
+    test "legacy get_task sends tasks/get" do
+      plug = fn conn ->
+        {:ok, body, conn} = Plug.Conn.read_body(conn)
+        decoded = Jason.decode!(body)
+        assert decoded["method"] == "tasks/get"
+        json_resp(conn, 200, jsonrpc_success(@task_json))
+      end
+
+      client = Client.new("https://agent.example.com", plug: plug, method_style: :legacy)
+      assert {:ok, _task} = Client.get_task(client, "tsk-123")
+    end
+
+    test "legacy cancel_task sends tasks/cancel" do
+      canceled_json = put_in(@task_json["status"]["state"], "canceled")
+
+      plug = fn conn ->
+        {:ok, body, conn} = Plug.Conn.read_body(conn)
+        decoded = Jason.decode!(body)
+        assert decoded["method"] == "tasks/cancel"
+        json_resp(conn, 200, jsonrpc_success(canceled_json))
+      end
+
+      client = Client.new("https://agent.example.com", plug: plug, method_style: :legacy)
+      assert {:ok, _task} = Client.cancel_task(client, "tsk-123")
     end
   end
 
