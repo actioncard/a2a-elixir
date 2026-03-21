@@ -264,6 +264,66 @@ if Code.ensure_loaded?(Req) do
       end
     end
 
+    @doc "Creates a push notification config for a task."
+    @spec create_push_config(target(), A2A.PushNotificationConfig.t(), keyword()) ::
+            {:ok, A2A.PushNotificationConfig.t()} | {:error, term()}
+    def create_push_config(target, %A2A.PushNotificationConfig{} = config, opts \\ []) do
+      client = ensure_client(target)
+      req_opts = take_req_opts(opts)
+      {:ok, params} = A2A.JSON.encode(config)
+      body = jsonrpc_request("tasks/pushNotificationConfig/set", params)
+
+      case post(client, body, req_opts) do
+        {:ok, response} -> decode_jsonrpc_result(response, :push_notification_config)
+        {:error, _} = error -> error
+      end
+    end
+
+    @doc "Gets a push notification config for a task."
+    @spec get_push_config(target(), String.t(), String.t(), keyword()) ::
+            {:ok, A2A.PushNotificationConfig.t()} | {:error, term()}
+    def get_push_config(target, task_id, config_id, opts \\ []) do
+      client = ensure_client(target)
+      req_opts = take_req_opts(opts)
+      params = %{"taskId" => task_id, "id" => config_id}
+      body = jsonrpc_request("tasks/pushNotificationConfig/get", params)
+
+      case post(client, body, req_opts) do
+        {:ok, response} -> decode_jsonrpc_result(response, :push_notification_config)
+        {:error, _} = error -> error
+      end
+    end
+
+    @doc "Lists push notification configs for a task."
+    @spec list_push_configs(target(), String.t(), keyword()) ::
+            {:ok, [A2A.PushNotificationConfig.t()]} | {:error, term()}
+    def list_push_configs(target, task_id, opts \\ []) do
+      client = ensure_client(target)
+      req_opts = take_req_opts(opts)
+      params = %{"taskId" => task_id}
+      body = jsonrpc_request("tasks/pushNotificationConfig/list", params)
+
+      case post(client, body, req_opts) do
+        {:ok, response} -> decode_push_configs_result(response)
+        {:error, _} = error -> error
+      end
+    end
+
+    @doc "Deletes a push notification config for a task."
+    @spec delete_push_config(target(), String.t(), String.t(), keyword()) ::
+            :ok | {:error, term()}
+    def delete_push_config(target, task_id, config_id, opts \\ []) do
+      client = ensure_client(target)
+      req_opts = take_req_opts(opts)
+      params = %{"taskId" => task_id, "id" => config_id}
+      body = jsonrpc_request("tasks/pushNotificationConfig/delete", params)
+
+      case post(client, body, req_opts) do
+        {:ok, response} -> decode_empty_result(response)
+        {:error, _} = error -> error
+      end
+    end
+
     # -------------------------------------------------------------------
     # Private — Request building
     # -------------------------------------------------------------------
@@ -382,6 +442,61 @@ if Code.ensure_loaded?(Req) do
     defp decode_jsonrpc_body(body, _type) do
       {:error, {:unexpected_body, body}}
     end
+
+    defp decode_push_configs_result(%Req.Response{body: body}) when is_map(body) do
+      decode_push_configs_body(body)
+    end
+
+    defp decode_push_configs_result(%Req.Response{body: body}) when is_binary(body) do
+      case Jason.decode(body) do
+        {:ok, decoded} -> decode_push_configs_body(decoded)
+        {:error, _} = error -> error
+      end
+    end
+
+    defp decode_push_configs_body(%{"error" => error_map}) do
+      {:error,
+       %Error{
+         code: error_map["code"],
+         message: error_map["message"],
+         data: error_map["data"]
+       }}
+    end
+
+    defp decode_push_configs_body(%{"result" => %{"configs" => configs}}) do
+      decoded =
+        Enum.map(configs, fn c ->
+          {:ok, config} = A2A.JSON.decode(c, :push_notification_config)
+          config
+        end)
+
+      {:ok, decoded}
+    end
+
+    defp decode_push_configs_body(body), do: {:error, {:unexpected_body, body}}
+
+    defp decode_empty_result(%Req.Response{body: body}) when is_map(body) do
+      decode_empty_body(body)
+    end
+
+    defp decode_empty_result(%Req.Response{body: body}) when is_binary(body) do
+      case Jason.decode(body) do
+        {:ok, decoded} -> decode_empty_body(decoded)
+        {:error, _} = error -> error
+      end
+    end
+
+    defp decode_empty_body(%{"error" => error_map}) do
+      {:error,
+       %Error{
+         code: error_map["code"],
+         message: error_map["message"],
+         data: error_map["data"]
+       }}
+    end
+
+    defp decode_empty_body(%{"result" => _}), do: :ok
+    defp decode_empty_body(body), do: {:error, {:unexpected_body, body}}
 
     # -------------------------------------------------------------------
     # Private — SSE streaming
