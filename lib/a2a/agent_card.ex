@@ -14,17 +14,22 @@ defmodule A2A.AgentCard do
   """
 
   @type skill :: %{
-          id: String.t(),
-          name: String.t(),
-          description: String.t(),
-          tags: [String.t()]
+          required(:id) => String.t(),
+          required(:name) => String.t(),
+          required(:description) => String.t(),
+          required(:tags) => [String.t()],
+          optional(:examples) => [String.t()],
+          optional(:input_modes) => [String.t()],
+          optional(:output_modes) => [String.t()],
+          optional(:security_requirements) => [map()]
         }
 
   @type capabilities :: %{
           optional(:streaming) => boolean(),
           optional(:push_notifications) => boolean(),
           optional(:state_transition_history) => boolean(),
-          optional(:extended_agent_card) => boolean()
+          optional(:extended_agent_card) => boolean(),
+          optional(:extensions) => [A2A.AgentExtension.t()]
         }
 
   @type provider :: %{
@@ -33,9 +38,10 @@ defmodule A2A.AgentCard do
         }
 
   @type supported_interface :: %{
-          url: String.t(),
-          protocol_binding: String.t(),
-          protocol_version: String.t()
+          required(:url) => String.t(),
+          required(:protocol_binding) => String.t(),
+          required(:protocol_version) => String.t(),
+          optional(:tenant) => String.t()
         }
 
   @type t :: %__MODULE__{
@@ -53,7 +59,9 @@ defmodule A2A.AgentCard do
           protocol_version: String.t() | nil,
           supported_interfaces: [supported_interface()],
           security_schemes: %{String.t() => A2A.SecurityScheme.t()},
-          security: [%{String.t() => [String.t()]}]
+          security: [%{String.t() => [String.t()]}],
+          signatures: [A2A.AgentCardSignature.t()],
+          security_requirements: [map()]
         }
 
   @enforce_keys [:name, :description, :url, :version, :skills]
@@ -72,6 +80,8 @@ defmodule A2A.AgentCard do
     default_output_modes: ["text/plain"],
     supported_interfaces: [],
     security_schemes: %{},
-    security: []
+    security: [],
+    signatures: [],
+    security_requirements: []
   ]
 end

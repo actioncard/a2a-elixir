@@ -124,6 +124,7 @@ defmodule A2A.JSON do
       |> put_unless_nil("contextId", msg.context_id)
       |> put_unless_empty("metadata", msg.metadata)
       |> put_unless_empty("extensions", msg.extensions)
+      |> put_unless_empty("referenceTaskIds", msg.reference_task_ids)
 
     {:ok, map}
   end
@@ -135,6 +136,7 @@ defmodule A2A.JSON do
       |> put_unless_nil("name", artifact.name)
       |> put_unless_nil("description", artifact.description)
       |> put_unless_empty("metadata", artifact.metadata)
+      |> put_unless_empty("extensions", artifact.extensions)
 
     {:ok, map}
   end
@@ -143,6 +145,8 @@ defmodule A2A.JSON do
     map =
       %{"kind" => "text", "text" => part.text}
       |> put_unless_empty("metadata", part.metadata)
+      |> put_unless_nil("mediaType", part.media_type)
+      |> put_unless_nil("filename", part.filename)
 
     {:ok, map}
   end
@@ -153,6 +157,8 @@ defmodule A2A.JSON do
     map =
       %{"kind" => "file", "file" => file}
       |> put_unless_empty("metadata", part.metadata)
+      |> put_unless_nil("mediaType", part.media_type)
+      |> put_unless_nil("filename", part.filename)
 
     {:ok, map}
   end
@@ -161,6 +167,8 @@ defmodule A2A.JSON do
     map =
       %{"kind" => "data", "data" => part.data}
       |> put_unless_empty("metadata", part.metadata)
+      |> put_unless_nil("mediaType", part.media_type)
+      |> put_unless_nil("filename", part.filename)
 
     {:ok, map}
   end
@@ -205,6 +213,63 @@ defmodule A2A.JSON do
       |> put_unless_nil("append", event.append)
       |> put_unless_nil("lastChunk", event.last_chunk)
       |> put_unless_empty("metadata", event.metadata)
+
+    {:ok, map}
+  end
+
+  def encode(%A2A.AuthenticationInfo{} = auth) do
+    map =
+      %{"scheme" => auth.scheme}
+      |> put_unless_nil("credentials", auth.credentials)
+
+    {:ok, map}
+  end
+
+  def encode(%A2A.TaskPushNotificationConfig{} = config) do
+    map =
+      %{"url" => config.url}
+      |> put_unless_nil("tenant", config.tenant)
+      |> put_unless_nil("id", config.id)
+      |> put_unless_nil("taskId", config.task_id)
+      |> put_unless_nil("token", config.token)
+      |> put_unless_nil_nested("authentication", config.authentication)
+
+    {:ok, map}
+  end
+
+  def encode(%A2A.SendMessageConfiguration{} = config) do
+    map =
+      %{}
+      |> put_unless_empty("acceptedOutputModes", config.accepted_output_modes)
+      |> put_unless_nil_nested(
+        "taskPushNotificationConfig",
+        config.task_push_notification_config
+      )
+      |> put_unless_nil("historyLength", config.history_length)
+
+    map =
+      if config.return_immediately,
+        do: Map.put(map, "returnImmediately", true),
+        else: map
+
+    {:ok, map}
+  end
+
+  def encode(%A2A.AgentExtension{} = ext) do
+    map =
+      %{"uri" => ext.uri}
+      |> put_unless_nil("description", ext.description)
+      |> put_unless_empty("params", ext.params)
+
+    map = if ext.required, do: Map.put(map, "required", true), else: map
+
+    {:ok, map}
+  end
+
+  def encode(%A2A.AgentCardSignature{} = sig) do
+    map =
+      %{"protected" => sig.protected, "signature" => sig.signature}
+      |> put_unless_empty("header", sig.header)
 
     {:ok, map}
   end
@@ -265,6 +330,13 @@ defmodule A2A.JSON do
           "description" => skill.description,
           "tags" => skill.tags
         }
+        |> put_unless_empty("examples", Map.get(skill, :examples, []))
+        |> put_unless_empty("inputModes", Map.get(skill, :input_modes, []))
+        |> put_unless_empty("outputModes", Map.get(skill, :output_modes, []))
+        |> put_unless_empty(
+          "securityRequirements",
+          Map.get(skill, :security_requirements, [])
+        )
       end)
 
     caps = encode_capabilities(capabilities)
@@ -287,6 +359,11 @@ defmodule A2A.JSON do
       |> put_unless_nil("protocolVersion", Keyword.get(opts, :protocol_version))
       |> put_unless_empty("securitySchemes", encode_security_schemes(security_schemes))
       |> put_unless_empty("security", security)
+      |> put_unless_empty("signatures", encode_signatures(Keyword.get(opts, :signatures, [])))
+      |> put_unless_empty(
+        "securityRequirements",
+        Keyword.get(opts, :security_requirements, [])
+      )
 
     map
   end
@@ -335,7 +412,9 @@ defmodule A2A.JSON do
          protocol_version: Map.get(map, "protocolVersion"),
          supported_interfaces: decode_card_interfaces(Map.get(map, "supportedInterfaces", [])),
          security_schemes: decode_card_security_schemes(Map.get(map, "securitySchemes", %{})),
-         security: Map.get(map, "security", [])
+         security: Map.get(map, "security", []),
+         signatures: decode_card_signatures(Map.get(map, "signatures", [])),
+         security_requirements: Map.get(map, "securityRequirements", [])
        }}
     end
   end
@@ -354,6 +433,9 @@ defmodule A2A.JSON do
           | :event
           | :status_update_event
           | :artifact_update_event
+          | :authentication_info
+          | :push_notification_config
+          | :send_message_configuration
 
   @doc """
   Decodes a JSON map into an Elixir struct of the given type.
@@ -413,7 +495,8 @@ defmodule A2A.JSON do
          task_id: Map.get(map, "taskId"),
          context_id: Map.get(map, "contextId"),
          metadata: Map.get(map, "metadata", %{}),
-         extensions: Map.get(map, "extensions", %{})
+         extensions: Map.get(map, "extensions", []),
+         reference_task_ids: Map.get(map, "referenceTaskIds", [])
        }}
     end
   end
@@ -427,7 +510,8 @@ defmodule A2A.JSON do
          name: Map.get(map, "name"),
          description: Map.get(map, "description"),
          parts: parts,
-         metadata: Map.get(map, "metadata", %{})
+         metadata: Map.get(map, "metadata", %{}),
+         extensions: Map.get(map, "extensions", [])
        }}
     end
   end
@@ -483,6 +567,52 @@ defmodule A2A.JSON do
     end
   end
 
+  def decode(map, :authentication_info) do
+    with {:ok, scheme} <- require_field(map, "scheme") do
+      {:ok,
+       %A2A.AuthenticationInfo{
+         scheme: scheme,
+         credentials: Map.get(map, "credentials")
+       }}
+    end
+  end
+
+  def decode(map, :push_notification_config) do
+    with {:ok, url} <- require_field(map, "url") do
+      auth =
+        case Map.get(map, "authentication") do
+          nil -> nil
+          auth_map -> decode!(auth_map, :authentication_info)
+        end
+
+      {:ok,
+       %A2A.TaskPushNotificationConfig{
+         tenant: Map.get(map, "tenant"),
+         id: Map.get(map, "id"),
+         task_id: Map.get(map, "taskId"),
+         url: url,
+         token: Map.get(map, "token"),
+         authentication: auth
+       }}
+    end
+  end
+
+  def decode(map, :send_message_configuration) do
+    push_config =
+      case Map.get(map, "taskPushNotificationConfig") do
+        nil -> nil
+        config_map -> decode!(config_map, :push_notification_config)
+      end
+
+    {:ok,
+     %A2A.SendMessageConfiguration{
+       accepted_output_modes: Map.get(map, "acceptedOutputModes", []),
+       task_push_notification_config: push_config,
+       history_length: Map.get(map, "historyLength"),
+       return_immediately: Map.get(map, "returnImmediately", false)
+     }}
+  end
+
   def decode(map, :artifact_update_event) do
     with {:ok, task_id} <- require_field(map, "taskId"),
          {:ok, artifact_map} <- require_field(map, "artifact"),
@@ -532,11 +662,34 @@ defmodule A2A.JSON do
   end
 
   defp encode_capabilities(caps) when is_map(caps) do
-    encode_known_keys(caps, [
-      {"streaming", :streaming},
-      {"pushNotifications", :push_notifications},
-      {"stateTransitionHistory", :state_transition_history},
-      {"extendedAgentCard", :extended_agent_card}
+    base =
+      encode_known_keys(caps, [
+        {"streaming", :streaming},
+        {"pushNotifications", :push_notifications},
+        {"stateTransitionHistory", :state_transition_history},
+        {"extendedAgentCard", :extended_agent_card}
+      ])
+
+    extensions = Map.get(caps, :extensions, [])
+
+    if extensions != [] do
+      Map.put(base, "extensions", Enum.map(extensions, &encode_agent_extension/1))
+    else
+      base
+    end
+  end
+
+  defp encode_agent_extension(%A2A.AgentExtension{} = ext) do
+    {:ok, map} = encode(ext)
+    map
+  end
+
+  defp encode_agent_extension(ext) when is_map(ext) do
+    encode_known_keys(ext, [
+      {"uri", :uri},
+      {"description", :description},
+      {"required", :required},
+      {"params", :params}
     ])
   end
 
@@ -544,10 +697,28 @@ defmodule A2A.JSON do
     mappings = [
       {"url", :url},
       {"protocolBinding", :protocol_binding},
-      {"protocolVersion", :protocol_version}
+      {"protocolVersion", :protocol_version},
+      {"tenant", :tenant}
     ]
 
     Enum.map(interfaces, &encode_known_keys(&1, mappings))
+  end
+
+  defp encode_signatures([]), do: []
+
+  defp encode_signatures(sigs) when is_list(sigs) do
+    Enum.map(sigs, fn
+      %A2A.AgentCardSignature{} = sig ->
+        {:ok, map} = encode(sig)
+        map
+
+      sig when is_map(sig) ->
+        encode_known_keys(sig, [
+          {"protected", :protected},
+          {"signature", :signature},
+          {"header", :header}
+        ])
+    end)
   end
 
   defp encode_provider(nil), do: nil
@@ -684,11 +855,15 @@ defmodule A2A.JSON do
   end
 
   # v0.3: parts may omit "kind" — infer from content field presence
+  # v1.0: flat Part with oneof (text, raw, url, data) + metadata + media_type + filename
   defp infer_part_type(map) do
     cond do
       Map.has_key?(map, "text") -> decode_text_part(map)
       Map.has_key?(map, "file") -> decode_file_part(map)
       Map.has_key?(map, "data") -> decode_data_part(map)
+      # v1.0 flat format: "raw" or "url" without "file" wrapper
+      Map.has_key?(map, "raw") -> decode_flat_file_part(map, :raw)
+      Map.has_key?(map, "url") -> decode_flat_file_part(map, :url)
       true -> {:error, {:missing_field, "kind"}}
     end
   end
@@ -698,7 +873,9 @@ defmodule A2A.JSON do
       {:ok,
        %A2A.Part.Text{
          text: text,
-         metadata: Map.get(map, "metadata", %{})
+         metadata: Map.get(map, "metadata", %{}),
+         media_type: Map.get(map, "mediaType") || Map.get(map, "media_type"),
+         filename: Map.get(map, "filename")
        }}
     end
   end
@@ -709,7 +886,9 @@ defmodule A2A.JSON do
       {:ok,
        %A2A.Part.File{
          file: file,
-         metadata: Map.get(map, "metadata", %{})
+         metadata: Map.get(map, "metadata", %{}),
+         media_type: Map.get(map, "mediaType") || Map.get(map, "media_type"),
+         filename: Map.get(map, "filename")
        }}
     end
   end
@@ -719,9 +898,46 @@ defmodule A2A.JSON do
       {:ok,
        %A2A.Part.Data{
          data: data,
-         metadata: Map.get(map, "metadata", %{})
+         metadata: Map.get(map, "metadata", %{}),
+         media_type: Map.get(map, "mediaType") || Map.get(map, "media_type"),
+         filename: Map.get(map, "filename")
        }}
     end
+  end
+
+  # v1.0 flat Part format: "raw" (base64 bytes) or "url" directly on the part
+  defp decode_flat_file_part(map, :raw) do
+    with {:ok, bytes} <- decode_base64(Map.get(map, "raw")) do
+      file = %A2A.FileContent{
+        bytes: bytes,
+        mime_type: Map.get(map, "mediaType") || Map.get(map, "media_type"),
+        name: Map.get(map, "filename")
+      }
+
+      {:ok,
+       %A2A.Part.File{
+         file: file,
+         metadata: Map.get(map, "metadata", %{}),
+         media_type: Map.get(map, "mediaType") || Map.get(map, "media_type"),
+         filename: Map.get(map, "filename")
+       }}
+    end
+  end
+
+  defp decode_flat_file_part(map, :url) do
+    file = %A2A.FileContent{
+      uri: Map.get(map, "url"),
+      mime_type: Map.get(map, "mediaType") || Map.get(map, "media_type"),
+      name: Map.get(map, "filename")
+    }
+
+    {:ok,
+     %A2A.Part.File{
+       file: file,
+       metadata: Map.get(map, "metadata", %{}),
+       media_type: Map.get(map, "mediaType") || Map.get(map, "media_type"),
+       filename: Map.get(map, "filename")
+     }}
   end
 
   # -------------------------------------------------------------------
@@ -733,12 +949,17 @@ defmodule A2A.JSON do
       with {:ok, id} <- require_field(skill, "id"),
            {:ok, name} <- require_field(skill, "name"),
            {:ok, description} <- require_field(skill, "description") do
-        decoded = %{
-          id: id,
-          name: name,
-          description: description,
-          tags: Map.get(skill, "tags", [])
-        }
+        decoded =
+          %{
+            id: id,
+            name: name,
+            description: description,
+            tags: Map.get(skill, "tags", [])
+          }
+          |> put_skill_field(:examples, Map.get(skill, "examples"))
+          |> put_skill_field(:input_modes, Map.get(skill, "inputModes"))
+          |> put_skill_field(:output_modes, Map.get(skill, "outputModes"))
+          |> put_skill_field(:security_requirements, Map.get(skill, "securityRequirements"))
 
         {:cont, {:ok, [decoded | acc]}}
       else
@@ -756,19 +977,39 @@ defmodule A2A.JSON do
   defp decode_card_capabilities(nil), do: %{}
 
   defp decode_card_capabilities(map) when is_map(map) do
-    decode_known_keys(map, [
-      {"streaming", :streaming},
-      {"pushNotifications", :push_notifications},
-      {"stateTransitionHistory", :state_transition_history},
-      {"extendedAgentCard", :extended_agent_card}
-    ])
+    base =
+      decode_known_keys(map, [
+        {"streaming", :streaming},
+        {"pushNotifications", :push_notifications},
+        {"stateTransitionHistory", :state_transition_history},
+        {"extendedAgentCard", :extended_agent_card}
+      ])
+
+    extensions = Map.get(map, "extensions", [])
+
+    if extensions != [] do
+      decoded_exts =
+        Enum.map(extensions, fn ext ->
+          %A2A.AgentExtension{
+            uri: Map.fetch!(ext, "uri"),
+            description: Map.get(ext, "description"),
+            required: Map.get(ext, "required", false),
+            params: Map.get(ext, "params")
+          }
+        end)
+
+      Map.put(base, :extensions, decoded_exts)
+    else
+      base
+    end
   end
 
   defp decode_card_interfaces(interfaces) when is_list(interfaces) do
     mappings = [
       {"url", :url},
       {"protocolBinding", :protocol_binding},
-      {"protocolVersion", :protocol_version}
+      {"protocolVersion", :protocol_version},
+      {"tenant", :tenant}
     ]
 
     Enum.map(interfaces, &decode_known_keys(&1, mappings))
@@ -820,6 +1061,22 @@ defmodule A2A.JSON do
   defp decode_security_scheme(%{"mtlsSecurityScheme" => _}) do
     %A2A.SecurityScheme.MutualTLS{}
   end
+
+  defp decode_card_signatures(sigs) when is_list(sigs) do
+    Enum.map(sigs, fn sig ->
+      %A2A.AgentCardSignature{
+        protected: Map.fetch!(sig, "protected"),
+        signature: Map.fetch!(sig, "signature"),
+        header: Map.get(sig, "header")
+      }
+    end)
+  end
+
+  defp decode_card_signatures(_), do: []
+
+  defp put_skill_field(skill, _key, nil), do: skill
+  defp put_skill_field(skill, _key, []), do: skill
+  defp put_skill_field(skill, key, value), do: Map.put(skill, key, value)
 
   defp decode_known_keys(source, mappings) do
     Enum.reduce(mappings, %{}, fn {json_key, atom_key}, acc ->

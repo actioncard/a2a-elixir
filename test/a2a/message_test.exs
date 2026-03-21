@@ -52,10 +52,11 @@ defmodule A2A.MessageTest do
   end
 
   describe "struct defaults" do
-    test "metadata and extensions default to empty maps" do
+    test "metadata defaults to empty map, extensions to empty list" do
       msg = Message.new_user("test")
       assert msg.metadata == %{}
-      assert msg.extensions == %{}
+      assert msg.extensions == []
+      assert msg.reference_task_ids == []
     end
 
     test "task_id and context_id default to nil" do
