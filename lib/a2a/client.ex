@@ -57,7 +57,7 @@ if Code.ensure_loaded?(Req) do
             method_style: :v1 | :legacy
           }
 
-    defstruct [:url, :req, method_style: :v1]
+    defstruct [:url, :req, method_style: :legacy]
 
     @doc """
     Creates a new client struct.
@@ -67,7 +67,7 @@ if Code.ensure_loaded?(Req) do
 
     ## Options
 
-    - `:method_style` — `:v1` (default, PascalCase) or `:legacy` (slash-style for v0.3 servers)
+    - `:method_style` — `:legacy` (default, slash-style for v0.3 compat) or `:v1` (PascalCase for v1.0 servers)
     - All other options are forwarded to `Req.new/1`
 
     ## Examples
@@ -84,7 +84,7 @@ if Code.ensure_loaded?(Req) do
     end
 
     def new(url, opts) when is_binary(url) do
-      method_style = Keyword.get(opts, :method_style, :v1)
+      method_style = Keyword.get(opts, :method_style, :legacy)
 
       {req_opts, _rest} =
         Keyword.split(opts, [:headers, :connect_options, :retry, :plug])
