@@ -75,7 +75,13 @@ if Code.ensure_loaded?(Req) do
       req =
         Req.new(
           Keyword.merge(
-            [base_url: url, headers: [{"content-type", "application/json"}]],
+            [
+              base_url: url,
+              headers: [
+                {"content-type", "application/json"},
+                {"a2a-version", "1.0"}
+              ]
+            ],
             req_opts
           )
         )

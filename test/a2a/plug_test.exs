@@ -422,6 +422,87 @@ defmodule A2A.PlugTest do
     end
   end
 
+  # -- A2A-Version header -------------------------------------------------------
+
+  describe "A2A-Version header" do
+    test "accepted when absent (per spec)", %{agent: agent} do
+      conn =
+        json_rpc_conn("message/send", message_params())
+        |> A2A.Plug.call(plug_opts(agent))
+
+      assert conn.status == 200
+      body = json_body(conn)
+      assert body["result"]["task"]["kind"] == "task"
+      assert get_resp_header(conn, "a2a-version") == ["1.0"]
+    end
+
+    test "accepted for supported version 1.0", %{agent: agent} do
+      conn =
+        json_rpc_conn("message/send", message_params())
+        |> Plug.Conn.put_req_header("a2a-version", "1.0")
+        |> A2A.Plug.call(plug_opts(agent))
+
+      assert conn.status == 200
+      body = json_body(conn)
+      assert body["result"]["task"]["kind"] == "task"
+      assert get_resp_header(conn, "a2a-version") == ["1.0"]
+    end
+
+    test "accepted for supported version 1.0.0", %{agent: agent} do
+      conn =
+        json_rpc_conn("message/send", message_params())
+        |> Plug.Conn.put_req_header("a2a-version", "1.0.0")
+        |> A2A.Plug.call(plug_opts(agent))
+
+      assert conn.status == 200
+      body = json_body(conn)
+      assert body["result"]["task"]["kind"] == "task"
+    end
+
+    test "unsupported version returns VersionNotSupportedError", %{agent: agent} do
+      conn =
+        json_rpc_conn("message/send", message_params())
+        |> Plug.Conn.put_req_header("a2a-version", "99.0")
+        |> A2A.Plug.call(plug_opts(agent))
+
+      assert conn.status == 200
+      body = json_body(conn)
+      assert body["error"]["code"] == -32_009
+      assert body["error"]["message"] == "Version not supported"
+      assert body["error"]["data"] =~ "99.0"
+    end
+
+    test "response includes A2A-Version header", %{agent: agent} do
+      conn =
+        json_rpc_conn("message/send", message_params())
+        |> Plug.Conn.put_req_header("a2a-version", "1.0")
+        |> A2A.Plug.call(plug_opts(agent))
+
+      assert get_resp_header(conn, "a2a-version") == ["1.0"]
+    end
+
+    test "custom supported_versions option", %{agent: agent} do
+      opts = plug_opts(agent, supported_versions: ["2.0"])
+
+      conn =
+        json_rpc_conn("message/send", message_params())
+        |> Plug.Conn.put_req_header("a2a-version", "1.0")
+        |> A2A.Plug.call(opts)
+
+      body = json_body(conn)
+      assert body["error"]["code"] == -32_009
+
+      conn2 =
+        json_rpc_conn("message/send", message_params())
+        |> Plug.Conn.put_req_header("a2a-version", "2.0")
+        |> A2A.Plug.call(opts)
+
+      body2 = json_body(conn2)
+      assert body2["result"]["task"]["kind"] == "task"
+      assert get_resp_header(conn2, "a2a-version") == ["2.0"]
+    end
+  end
+
   defp get_resp_header(conn, key) do
     for {k, v} <- conn.resp_headers, k == key, do: v
   end
