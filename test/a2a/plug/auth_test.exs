@@ -386,7 +386,7 @@ defmodule A2A.Plug.AuthTest do
 
   describe "integration with A2A.Plug" do
     test "auth identity flows to task metadata" do
-      agent = start_supervised!(A2A.Test.EchoAgent)
+      agent = start_supervised!({A2A.Test.EchoAgent, [name: nil]})
 
       auth_opts =
         Auth.init(

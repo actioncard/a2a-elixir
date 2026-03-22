@@ -42,7 +42,7 @@ defmodule A2A.Plug.SSETest do
   end
 
   setup do
-    agent = start_supervised!(A2A.Test.StreamAgent)
+    agent = start_supervised!({A2A.Test.StreamAgent, [name: nil]})
     {:ok, agent: agent}
   end
 

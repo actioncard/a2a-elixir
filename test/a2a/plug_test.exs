@@ -35,7 +35,7 @@ defmodule A2A.PlugTest do
   end
 
   setup do
-    agent = start_supervised!(A2A.Test.EchoAgent)
+    agent = start_supervised!({A2A.Test.EchoAgent, [name: nil]})
     {:ok, agent: agent}
   end
 
