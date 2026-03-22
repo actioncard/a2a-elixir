@@ -1,0 +1,80 @@
+name: TCK PR Comment
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  comment:
+    name: Post TCK results to PR
+    runs-on: ubuntu-24.04
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion != 'cancelled'
+    steps:
+      - name: Download TCK results artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tck-results
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+        continue-on-error: true
+        id: download
+
+      - name: Post TCK results comment
+        if: steps.download.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if [ ! -f tck-output.txt ]; then
+            echo "No TCK output file found"
+            exit 0
+          fi
+
+          if [ ! -f pr-number.txt ]; then
+            echo "No PR number file found"
+            exit 0
+          fi
+
+          PR_NUMBER=$(cat pr-number.txt)
+          if [ -z "$PR_NUMBER" ]; then
+            echo "PR number is empty"
+            exit 0
+          fi
+
+          SUMMARY=$(sed -n '/COMPREHENSIVE TEST RESULTS SUMMARY/,/^={10,}/p' tck-output.txt | head -30)
+
+          if [ -z "$SUMMARY" ]; then
+            echo "No summary section found in TCK output"
+            exit 0
+          fi
+
+          MARKER="<!-- tck-compliance-results -->"
+
+          {
+            echo "${MARKER}"
+            echo "## TCK Compliance Results"
+            echo ""
+            echo '```'
+            echo "$SUMMARY"
+            echo '```'
+          } > tck-comment.md
+
+          BODY=$(cat tck-comment.md)
+
+          COMMENT_ID=$(gh api "repos/${GH_REPO}/issues/${PR_NUMBER}/comments" \
+            --jq "[.[] | select(.body | contains(\"${MARKER}\")) | .id] | first" 2>/dev/null || true)
+
+          if [ -n "$COMMENT_ID" ] && [ "$COMMENT_ID" != "null" ]; then
+            gh api "repos/${GH_REPO}/issues/comments/${COMMENT_ID}" \
+              -X PATCH -f body="$BODY"
+            echo "Updated existing comment ${COMMENT_ID}"
+          else
+            gh pr comment "$PR_NUMBER" --body-file tck-comment.md
+            echo "Created new comment"
+          fi
