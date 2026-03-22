@@ -10,7 +10,6 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
 
 jobs:
   quality:
@@ -138,48 +137,25 @@ jobs:
       - run: mix compile
 
       - name: Run TCK (all categories)
+        id: tck-run
         run: bin/tck all 2>&1 | tee tck-output.txt
 
-      - name: Post TCK results to PR
+      - name: Save PR metadata for comment workflow
         if: always() && github.event_name == 'pull_request'
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
-          if [ ! -f tck-output.txt ]; then
-            echo "No TCK output to post"
-            exit 0
-          fi
+          echo "${{ github.event.pull_request.number }}" > pr-number.txt
+          echo "${{ steps.tck-run.outcome }}" > tck-outcome.txt
 
-          SUMMARY=$(sed -n '/COMPREHENSIVE TEST RESULTS SUMMARY/,/^={10,}/p' tck-output.txt | head -30)
-
-          if [ -z "$SUMMARY" ]; then
-            echo "No summary section found in TCK output"
-            exit 0
-          fi
-
-          MARKER="<!-- tck-compliance-results -->"
-          PR_NUMBER=${{ github.event.pull_request.number }}
-
-          {
-            echo "${MARKER}"
-            echo "## TCK Compliance Results"
-            echo ""
-            echo '```'
-            echo "$SUMMARY"
-            echo '```'
-          } > tck-comment.md
-
-          BODY=$(cat tck-comment.md)
-
-          COMMENT_ID=$(gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
-            --jq "[.[] | select(.body | contains(\"${MARKER}\")) | .id] | first" 2>/dev/null || true)
-
-          if [ -n "$COMMENT_ID" ] && [ "$COMMENT_ID" != "null" ]; then
-            gh api "repos/${{ github.repository }}/issues/comments/${COMMENT_ID}" \
-              -X PATCH -f body="$BODY"
-          else
-            gh pr comment "$PR_NUMBER" --body-file tck-comment.md
-          fi
+      - name: Upload TCK results for PR comment
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tck-results
+          path: |
+            tck-output.txt
+            pr-number.txt
+            tck-outcome.txt
+          retention-days: 1
 
   publish:
     name: Publish to Hex
