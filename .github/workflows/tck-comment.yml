@@ -17,7 +17,7 @@ jobs:
       github.event.workflow_run.conclusion != 'cancelled'
     steps:
       - name: Download TCK results artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: tck-results
           run-id: ${{ github.event.workflow_run.id }}
