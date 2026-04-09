@@ -32,6 +32,12 @@ if Code.ensure_loaded?(Plug) do
     - `:metadata` — static metadata merged into every JSON-RPC call
       (default: `%{}`). Useful for deployment-level metadata like
       `%{"env" => "prod"}`. Overridden per-request by `put_metadata/2`.
+    - `:extensions` — list of `%A2A.AgentExtension{}` structs declaring
+      extensions this server supports. Required extensions are validated
+      against the client's `A2A-Extensions` request header; missing
+      required extensions return `ExtensionSupportRequiredError` (-32008).
+      The server sets the `A2A-Extensions` response header with all
+      supported extension URIs.
 
     ## Per-Request Overrides
 
@@ -116,7 +122,8 @@ if Code.ensure_loaded?(Plug) do
         agent_card_path: Keyword.get(opts, :agent_card_path, [".well-known", "agent-card.json"]),
         json_rpc_path: Keyword.get(opts, :json_rpc_path, []),
         agent_card_opts: Keyword.get(opts, :agent_card_opts, []),
-        metadata: Keyword.get(opts, :metadata, %{})
+        metadata: Keyword.get(opts, :metadata, %{}),
+        extensions: Keyword.get(opts, :extensions, [])
       }
     end
 
@@ -129,7 +136,23 @@ if Code.ensure_loaded?(Plug) do
 
     def call(%{method: "POST", path_info: path} = conn, %{json_rpc_path: path} = opts) do
       resolved = resolve_opts(conn, opts)
-      handle_json_rpc(conn, resolved)
+
+      case validate_extensions(conn, resolved) do
+        :ok ->
+          conn
+          |> put_extensions_response_header(resolved)
+          |> handle_json_rpc(resolved)
+
+        {:error, missing} ->
+          error =
+            Error.extension_support_required(
+              "Client missing required extensions: #{Enum.join(missing, ", ")}"
+            )
+
+          conn
+          |> put_resp_content_type("application/json")
+          |> send_resp(200, Jason.encode!(Response.error(nil, error)))
+      end
     end
 
     def call(%{path_info: path} = conn, %{agent_card_path: path}) do
@@ -140,6 +163,50 @@ if Code.ensure_loaded?(Plug) do
 
     def call(conn, _opts) do
       send_resp(conn, 404, "Not Found")
+    end
+
+    # -- Extension validation --------------------------------------------------
+
+    defp validate_extensions(_conn, %{extensions: []}), do: :ok
+
+    defp validate_extensions(conn, %{extensions: extensions}) do
+      required_uris =
+        extensions
+        |> Enum.filter(& &1.required)
+        |> Enum.map(& &1.uri)
+        |> MapSet.new()
+
+      case MapSet.size(required_uris) do
+        0 ->
+          :ok
+
+        _ ->
+          client_uris =
+            conn
+            |> get_req_header("a2a-extensions")
+            |> parse_extension_header()
+            |> MapSet.new()
+
+          missing = MapSet.difference(required_uris, client_uris) |> MapSet.to_list()
+
+          if missing == [], do: :ok, else: {:error, missing}
+      end
+    end
+
+    defp parse_extension_header([]), do: []
+
+    defp parse_extension_header([header | _]) do
+      header
+      |> String.split(",")
+      |> Enum.map(&String.trim/1)
+      |> Enum.reject(&(&1 == ""))
+    end
+
+    defp put_extensions_response_header(conn, %{extensions: []}), do: conn
+
+    defp put_extensions_response_header(conn, %{extensions: extensions}) do
+      uris = Enum.map(extensions, & &1.uri)
+      put_resp_header(conn, "a2a-extensions", Enum.join(uris, ", "))
     end
 
     # -- Option resolution -----------------------------------------------------

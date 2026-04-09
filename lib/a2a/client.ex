@@ -35,6 +35,8 @@ if Code.ensure_loaded?(Req) do
     - `:context_id` — set the context ID
     - `:configuration` — `MessageSendConfiguration` map
     - `:metadata` — arbitrary metadata map
+    - `:extensions` — list of extension URI strings; sent via
+      `A2A-Extensions` request header (set at client creation via `new/2`)
     - `:headers` — additional HTTP headers
     - `:timeout` — HTTP request timeout in ms
     """
@@ -45,10 +47,11 @@ if Code.ensure_loaded?(Req) do
 
     @type t :: %__MODULE__{
             url: String.t(),
-            req: Req.Request.t()
+            req: Req.Request.t(),
+            extensions: [String.t()]
           }
 
-    defstruct [:url, :req]
+    defstruct [:url, :req, extensions: []]
 
     @doc """
     Creates a new client struct.
@@ -69,18 +72,28 @@ if Code.ensure_loaded?(Req) do
     end
 
     def new(url, opts) when is_binary(url) do
+      {ext_uris, opts} = Keyword.pop(opts, :extensions, [])
+
       {req_opts, _rest} =
         Keyword.split(opts, [:headers, :connect_options, :retry, :plug])
+
+      headers = [{"content-type", "application/json"}]
+
+      headers =
+        case ext_uris do
+          [] -> headers
+          uris -> [{"a2a-extensions", Enum.join(uris, ", ")} | headers]
+        end
 
       req =
         Req.new(
           Keyword.merge(
-            [base_url: url, headers: [{"content-type", "application/json"}]],
+            [base_url: url, headers: headers],
             req_opts
           )
         )
 
-      %__MODULE__{url: url, req: req}
+      %__MODULE__{url: url, req: req, extensions: ext_uris}
     end
 
     @doc """
@@ -343,6 +356,32 @@ if Code.ensure_loaded?(Req) do
     defp ensure_client(%__MODULE__{} = client), do: client
     defp ensure_client(%A2A.AgentCard{} = card), do: new(card)
     defp ensure_client(url) when is_binary(url), do: new(url)
+
+    @doc """
+    Parses the `A2A-Extensions` response header from a `Req.Response`.
+
+    Returns a list of extension URI strings the server supports.
+    Returns an empty list if the header is absent.
+
+    ## Examples
+
+        {:ok, response} = Req.post(client.req, body: body)
+        server_exts = A2A.Client.parse_extensions_header(response)
+        #=> ["https://a2a-protocol.org/extensions/timestamp"]
+    """
+    @spec parse_extensions_header(Req.Response.t()) :: [String.t()]
+    def parse_extensions_header(%Req.Response{headers: headers}) do
+      case Map.get(headers, "a2a-extensions", []) do
+        [] ->
+          []
+
+        values when is_list(values) ->
+          values
+          |> Enum.flat_map(&String.split(&1, ","))
+          |> Enum.map(&String.trim/1)
+          |> Enum.reject(&(&1 == ""))
+      end
+    end
 
     # -------------------------------------------------------------------
     # Private — Response decoding
