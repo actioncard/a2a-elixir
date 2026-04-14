@@ -78,3 +78,76 @@ jobs:
             gh pr comment "$PR_NUMBER" --body-file tck-comment.md
             echo "Created new comment"
           fi
+
+  comment-v1:
+    name: Post TCK 1.0-dev results to PR
+    runs-on: ubuntu-24.04
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion != 'cancelled'
+    steps:
+      - name: Download TCK 1.0-dev results artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: tck-v1-results
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+        continue-on-error: true
+        id: download-v1
+
+      - name: Post TCK 1.0-dev results comment
+        if: steps.download-v1.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if [ ! -f tck-v1-output.txt ] || [ ! -f pr-number.txt ]; then
+            echo "Missing output or PR number file"
+            exit 0
+          fi
+
+          PR_NUMBER=$(cat pr-number.txt)
+          if [ -z "$PR_NUMBER" ]; then
+            echo "PR number is empty"
+            exit 0
+          fi
+
+          # Extract the compatibility report table from TCK 1.0-dev output
+          SUMMARY=$(sed -n '/A2A TCK Compatibility Report/,/short test summary/p' tck-v1-output.txt | head -40)
+
+          if [ -z "$SUMMARY" ]; then
+            # Fallback: grab the pytest summary line
+            SUMMARY=$(grep -E '(passed|failed|skipped|error)' tck-v1-output.txt | tail -5)
+          fi
+
+          if [ -z "$SUMMARY" ]; then
+            echo "No summary found in TCK 1.0-dev output"
+            exit 0
+          fi
+
+          MARKER="<!-- tck-v1-compatibility-results -->"
+
+          {
+            echo "${MARKER}"
+            echo "## TCK 1.0-dev Compatibility Results (experimental)"
+            echo ""
+            echo "> This run is informational — failures do not block CI."
+            echo ""
+            echo '```'
+            echo "$SUMMARY"
+            echo '```'
+          } > tck-v1-comment.md
+
+          BODY=$(cat tck-v1-comment.md)
+
+          COMMENT_ID=$(gh api "repos/${GH_REPO}/issues/${PR_NUMBER}/comments" \
+            --jq "[.[] | select(.body | contains(\"${MARKER}\")) | .id] | first" 2>/dev/null || true)
+
+          if [ -n "$COMMENT_ID" ] && [ "$COMMENT_ID" != "null" ]; then
+            gh api "repos/${GH_REPO}/issues/comments/${COMMENT_ID}" \
+              -X PATCH -f body="$BODY"
+            echo "Updated existing comment ${COMMENT_ID}"
+          else
+            gh pr comment "$PR_NUMBER" --body-file tck-v1-comment.md
+            echo "Created new comment"
+          fi
