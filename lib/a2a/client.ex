@@ -37,6 +37,14 @@ if Code.ensure_loaded?(Req) do
     - `:metadata` — arbitrary metadata map
     - `:headers` — additional HTTP headers
     - `:timeout` — HTTP request timeout in ms
+
+    ## Method Style
+
+    By default the client sends v1.0 PascalCase method names (e.g.
+    `SendMessage`). To communicate with a v0.3 server, pass
+    `method_style: :legacy` when creating the client:
+
+        client = A2A.Client.new(url, method_style: :legacy)
     """
 
     alias A2A.JSONRPC.Error
@@ -45,10 +53,11 @@ if Code.ensure_loaded?(Req) do
 
     @type t :: %__MODULE__{
             url: String.t(),
-            req: Req.Request.t()
+            req: Req.Request.t(),
+            method_style: :v1 | :legacy
           }
 
-    defstruct [:url, :req]
+    defstruct [:url, :req, method_style: :legacy]
 
     @doc """
     Creates a new client struct.
@@ -56,10 +65,16 @@ if Code.ensure_loaded?(Req) do
     Accepts a URL string or `%A2A.AgentCard{}`. Options are forwarded to
     `Req.new/1` for customizing the HTTP client (headers, timeouts, etc.).
 
+    ## Options
+
+    - `:method_style` — `:legacy` (default, slash-style for v0.3 compat) or `:v1` (PascalCase for v1.0 servers)
+    - All other options are forwarded to `Req.new/1`
+
     ## Examples
 
         client = A2A.Client.new("https://agent.example.com")
         client = A2A.Client.new(card, headers: [{"authorization", "Bearer token"}])
+        client = A2A.Client.new(url, method_style: :legacy)
     """
     @spec new(A2A.AgentCard.t() | String.t(), keyword()) :: t()
     def new(url_or_card, opts \\ [])
@@ -69,6 +84,8 @@ if Code.ensure_loaded?(Req) do
     end
 
     def new(url, opts) when is_binary(url) do
+      method_style = Keyword.get(opts, :method_style, :legacy)
+
       {req_opts, _rest} =
         Keyword.split(opts, [:headers, :connect_options, :retry, :plug])
 
@@ -80,7 +97,7 @@ if Code.ensure_loaded?(Req) do
           )
         )
 
-      %__MODULE__{url: url, req: req}
+      %__MODULE__{url: url, req: req, method_style: method_style}
     end
 
     @doc """
@@ -152,7 +169,8 @@ if Code.ensure_loaded?(Req) do
     def send_message(target, message, opts \\ []) do
       client = ensure_client(target)
       {params, req_opts} = build_send_params(message, opts)
-      body = jsonrpc_request("message/send", params)
+      method = resolve_method("message/send", client.method_style)
+      body = jsonrpc_request(method, params)
 
       case post(client, body, req_opts) do
         {:ok, response} -> decode_jsonrpc_result(response, :task)
@@ -185,7 +203,8 @@ if Code.ensure_loaded?(Req) do
     def stream_message(target, message, opts \\ []) do
       client = ensure_client(target)
       {params, req_opts} = build_send_params(message, opts)
-      body = jsonrpc_request("message/stream", params)
+      method = resolve_method("message/stream", client.method_style)
+      body = jsonrpc_request(method, params)
 
       json_body = Jason.encode!(body)
       req = merge_req_opts(client.req, req_opts)
@@ -230,7 +249,8 @@ if Code.ensure_loaded?(Req) do
         %{"id" => task_id}
         |> put_opt("historyLength", opts[:history_length])
 
-      body = jsonrpc_request("tasks/get", params)
+      method = resolve_method("tasks/get", client.method_style)
+      body = jsonrpc_request(method, params)
 
       case post(client, body, req_opts) do
         {:ok, response} -> decode_jsonrpc_result(response, :task)
@@ -256,13 +276,36 @@ if Code.ensure_loaded?(Req) do
       client = ensure_client(target)
       req_opts = take_req_opts(opts)
       params = %{"id" => task_id}
-      body = jsonrpc_request("tasks/cancel", params)
+      method = resolve_method("tasks/cancel", client.method_style)
+      body = jsonrpc_request(method, params)
 
       case post(client, body, req_opts) do
         {:ok, response} -> decode_jsonrpc_result(response, :task)
         {:error, _} = error -> error
       end
     end
+
+    # -------------------------------------------------------------------
+    # Private — Method name mapping
+    # -------------------------------------------------------------------
+
+    # v1.0 PascalCase equivalents for legacy slash-style method names
+    @v1_method_names %{
+      "message/send" => "SendMessage",
+      "message/stream" => "SendStreamingMessage",
+      "tasks/get" => "GetTask",
+      "tasks/cancel" => "CancelTask",
+      "tasks/list" => "ListTasks",
+      "tasks/resubscribe" => "SubscribeToTask",
+      "tasks/pushNotificationConfig/set" => "CreateTaskPushNotificationConfig",
+      "tasks/pushNotificationConfig/get" => "GetTaskPushNotificationConfig",
+      "tasks/pushNotificationConfig/list" => "ListTaskPushNotificationConfigs",
+      "tasks/pushNotificationConfig/delete" => "DeleteTaskPushNotificationConfig",
+      "agent/getAuthenticatedExtendedCard" => "GetExtendedAgentCard"
+    }
+
+    defp resolve_method(method, :v1), do: Map.get(@v1_method_names, method, method)
+    defp resolve_method(method, :legacy), do: method
 
     # -------------------------------------------------------------------
     # Private — Request building

@@ -201,6 +201,34 @@ defmodule A2A.JSONRPCTest do
 
       assert response["error"]["code"] == -32_601
     end
+
+    test "SubscribeToTask dispatches as tasks/resubscribe stream" do
+      params = %{"id" => "tsk-1"}
+      result = JSONRPC.handle(rpc("SubscribeToTask", params), @handler)
+
+      assert {:stream, "tasks/resubscribe", ^params, 1} = result
+    end
+
+    test "GetTaskPushNotificationConfig returns push_notification_not_supported" do
+      {:reply, response} =
+        JSONRPC.handle(rpc("GetTaskPushNotificationConfig"), @handler)
+
+      assert response["error"]["code"] == -32_003
+    end
+
+    test "ListTaskPushNotificationConfigs returns push_notification_not_supported" do
+      {:reply, response} =
+        JSONRPC.handle(rpc("ListTaskPushNotificationConfigs"), @handler)
+
+      assert response["error"]["code"] == -32_003
+    end
+
+    test "DeleteTaskPushNotificationConfig returns push_notification_not_supported" do
+      {:reply, response} =
+        JSONRPC.handle(rpc("DeleteTaskPushNotificationConfig"), @handler)
+
+      assert response["error"]["code"] == -32_003
+    end
   end
 
   # -- unknown method --------------------------------------------------------

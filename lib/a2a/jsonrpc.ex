@@ -39,7 +39,7 @@ defmodule A2A.JSONRPC do
 
   alias A2A.JSONRPC.{Error, Request, Response}
 
-  # v0.3.0 PascalCase method names → internal slash-style names
+  # v1.0 PascalCase method names → internal slash-style names
   @method_aliases %{
     "SendMessage" => "message/send",
     "SendStreamingMessage" => "message/stream",
