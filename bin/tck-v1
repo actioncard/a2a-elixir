@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+#
+# Runs the A2A TCK 1.0-dev branch against a local server.
+#
+# Usage: bin/tck-v1 [must|should|may|all]
+#
+# Prerequisites: uv (Python package manager)
+
+set -euo pipefail
+
+LEVEL="${1:-must}"
+PORT="${A2A_TCK_PORT:-9999}"
+TCK_DIR=".tck-v1"
+SUT_URL="http://localhost:${PORT}"
+SERVER_PID=""
+
+cleanup() {
+  if [ -n "$SERVER_PID" ] && kill -0 "$SERVER_PID" 2>/dev/null; then
+    echo "Stopping server (PID $SERVER_PID)..."
+    kill "$SERVER_PID" 2>/dev/null || true
+    wait "$SERVER_PID" 2>/dev/null || true
+  fi
+}
+
+trap cleanup EXIT
+
+if ! command -v uv &> /dev/null; then
+  echo "ERROR: uv is required for TCK 1.0-dev (install via https://github.com/astral-sh/uv)"
+  exit 1
+fi
+
+# --- Clone/update TCK 1.0-dev ---
+
+if [ ! -d "$TCK_DIR" ]; then
+  echo "Cloning A2A TCK (1.0-dev branch)..."
+  git clone --branch 1.0-dev --single-branch https://github.com/a2aproject/a2a-tck.git "$TCK_DIR"
+else
+  echo "Updating A2A TCK (1.0-dev)..."
+  git -C "$TCK_DIR" fetch origin 1.0-dev
+  git -C "$TCK_DIR" checkout FETCH_HEAD --detach 2>/dev/null || true
+fi
+
+# --- Install Python deps ---
+
+echo "Installing TCK dependencies..."
+cd "$TCK_DIR"
+uv sync
+cd ..
+
+# --- Start Elixir server (no auth) ---
+
+echo "Starting TCK v1 server on port $PORT..."
+A2A_TCK_PORT="$PORT" mix run test/tck/server_v1.exs &
+SERVER_PID=$!
+
+# Poll until agent card responds
+echo "Waiting for server..."
+for i in $(seq 1 30); do
+  if curl -sf "${SUT_URL}/.well-known/agent-card.json" > /dev/null 2>&1; then
+    echo "Server ready."
+    break
+  fi
+  if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+    echo "ERROR: Server process died."
+    exit 1
+  fi
+  sleep 1
+done
+
+if ! curl -sf "${SUT_URL}/.well-known/agent-card.json" > /dev/null 2>&1; then
+  echo "ERROR: Server failed to start within 30 seconds."
+  exit 1
+fi
+
+# --- Run TCK ---
+
+echo ""
+echo "Running TCK 1.0-dev (level: $LEVEL)..."
+echo "========================================"
+
+TCK_ARGS="--sut-host $SUT_URL --transport jsonrpc"
+if [ "$LEVEL" != "all" ]; then
+  TCK_ARGS="$TCK_ARGS --level $LEVEL"
+fi
+
+cd "$TCK_DIR"
+uv run ./run_tck.py $TCK_ARGS -v 2>&1
+TCK_EXIT=$?
+cd ..
+
+echo ""
+echo "========================================"
+echo "TCK 1.0-dev run complete."
+exit "$TCK_EXIT"

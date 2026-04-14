@@ -157,6 +157,63 @@ jobs:
             tck-outcome.txt
           retention-days: 1
 
+  tck-v1:
+    name: TCK 1.0-dev (experimental)
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: erlef/setup-beam@v1
+        with:
+          elixir-version: "1.18"
+          otp-version: "27"
+
+      - uses: astral-sh/setup-uv@v7
+
+      - name: Restore dependencies cache
+        uses: actions/cache@v5
+        with:
+          path: deps
+          key: deps-${{ runner.os }}-1.18-27-${{ hashFiles('**/mix.lock') }}
+          restore-keys: deps-${{ runner.os }}-1.18-27-
+
+      - name: Restore build cache
+        uses: actions/cache@v5
+        with:
+          path: _build
+          key: build-${{ runner.os }}-1.18-27-${{ hashFiles('**/mix.lock') }}
+          restore-keys: build-${{ runner.os }}-1.18-27-
+
+      - name: Cache TCK 1.0-dev repo
+        uses: actions/cache@v5
+        with:
+          path: .tck-v1
+          key: tck-v1-${{ hashFiles('bin/tck-v1') }}
+
+      - run: mix deps.get
+
+      - run: mix compile
+
+      - name: Run TCK 1.0-dev
+        id: tck-v1-run
+        run: bin/tck-v1 all 2>&1 | tee tck-v1-output.txt || true
+
+      - name: Save PR metadata for comment workflow
+        if: always() && github.event_name == 'pull_request'
+        run: |
+          echo "${{ github.event.pull_request.number }}" > pr-number.txt
+
+      - name: Upload TCK 1.0-dev results for PR comment
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v7
+        with:
+          name: tck-v1-results
+          path: |
+            tck-v1-output.txt
+            pr-number.txt
+          retention-days: 1
+
   publish:
     name: Publish to Hex
     if: github.event_name == 'release'

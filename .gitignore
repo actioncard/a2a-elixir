@@ -17,4 +17,5 @@ erl_crash.dump
 
 # TCK
 /.tck/
+/.tck-v1/
 /tck-report.json
