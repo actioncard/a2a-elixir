@@ -252,7 +252,7 @@ defmodule A2A.JSON do
 
     interfaces =
       Keyword.get(opts, :supported_interfaces) ||
-        [%{url: url, protocol_binding: "jsonrpc", protocol_version: "2.0"}]
+        [%{url: url, protocol_binding: "JSONRPC", protocol_version: "2.0"}]
 
     security_schemes = Keyword.get(opts, :security_schemes, %{})
     security = Keyword.get(opts, :security, [])

@@ -902,7 +902,7 @@ defmodule A2A.JSONTest do
       assert [
                %{
                  "url" => "https://example.com/a2a",
-                 "protocolBinding" => "jsonrpc",
+                 "protocolBinding" => "JSONRPC",
                  "protocolVersion" => "2.0"
                }
              ] = map["supportedInterfaces"]
@@ -1116,7 +1116,7 @@ defmodule A2A.JSONTest do
       assert [%{id: "s1", name: "Skill One", tags: ["tag1"]}] = decoded.skills
       assert decoded.capabilities == %{streaming: true}
 
-      assert [%{url: "https://example.com", protocol_binding: "jsonrpc", protocol_version: "2.0"}] =
+      assert [%{url: "https://example.com", protocol_binding: "JSONRPC", protocol_version: "2.0"}] =
                decoded.supported_interfaces
 
       assert decoded.provider == %{organization: "Org", url: "https://org.example.com"}
