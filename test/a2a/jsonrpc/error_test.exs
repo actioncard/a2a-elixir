@@ -79,6 +79,20 @@ defmodule A2A.JSONRPC.ErrorTest do
       assert e.message == "Authenticated Extended Card is not configured"
     end
 
+    test "extension_support_required/0" do
+      e = Error.extension_support_required()
+      assert e.code == -32_008
+      assert e.message == "Extension support is required"
+      assert e.data == nil
+    end
+
+    test "version_not_supported/0" do
+      e = Error.version_not_supported()
+      assert e.code == -32_009
+      assert e.message == "Version not supported"
+      assert e.data == nil
+    end
+
     test "constructors accept optional data" do
       e = Error.parse_error("unexpected token")
       assert e.data == "unexpected token"
