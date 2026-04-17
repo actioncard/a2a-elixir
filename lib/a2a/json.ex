@@ -209,6 +209,22 @@ defmodule A2A.JSON do
     {:ok, map}
   end
 
+  def encode(%A2A.PushNotificationConfig{} = config) do
+    map =
+      %{}
+      |> put_unless_nil("id", config.id)
+      |> put_unless_nil("taskId", config.task_id)
+      |> put_unless_nil("url", config.url)
+      |> put_unless_nil("token", config.token)
+      |> put_unless_nil("authentication", encode_authentication_info(config.authentication))
+
+    {:ok, map}
+  end
+
+  def encode(%A2A.AuthenticationInfo{} = auth) do
+    {:ok, encode_authentication_info(auth)}
+  end
+
   def encode(%{__struct__: mod}) do
     {:error, {:unsupported_type, mod}}
   end
@@ -499,6 +515,17 @@ defmodule A2A.JSON do
     end
   end
 
+  def decode(map, :push_notification_config) do
+    {:ok,
+     %A2A.PushNotificationConfig{
+       id: Map.get(map, "id"),
+       task_id: Map.get(map, "taskId"),
+       url: Map.get(map, "url"),
+       token: Map.get(map, "token"),
+       authentication: decode_authentication_info(Map.get(map, "authentication"))
+     }}
+  end
+
   @doc """
   Decodes a JSON map into an Elixir struct, raising on failure.
   """
@@ -627,6 +654,22 @@ defmodule A2A.JSON do
   defp put_unless_nil_nested(map, key, struct) do
     {:ok, encoded} = encode(struct)
     Map.put(map, key, encoded)
+  end
+
+  defp encode_authentication_info(nil), do: nil
+
+  defp encode_authentication_info(%A2A.AuthenticationInfo{} = auth) do
+    %{"scheme" => auth.scheme}
+    |> put_unless_nil("credentials", auth.credentials)
+  end
+
+  defp decode_authentication_info(nil), do: nil
+
+  defp decode_authentication_info(map) when is_map(map) do
+    %A2A.AuthenticationInfo{
+      scheme: Map.get(map, "scheme", ""),
+      credentials: Map.get(map, "credentials")
+    }
   end
 
   # -------------------------------------------------------------------

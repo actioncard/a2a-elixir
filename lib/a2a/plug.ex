@@ -309,6 +309,84 @@ if Code.ensure_loaded?(Plug) do
       end
     end
 
+    @impl A2A.JSONRPC
+    def handle_set_push_config(config, _params, %{agent: agent}) do
+      task_store = get_task_store(agent)
+
+      if task_store do
+        {store_mod, store_ref} = task_store
+
+        config =
+          if config.id do
+            config
+          else
+            %{config | id: A2A.ID.generate("pcfg")}
+          end
+
+        case store_mod.set_push_config(store_ref, config) do
+          {:ok, _} = ok -> ok
+          {:error, reason} -> {:error, Error.internal_error(inspect(reason))}
+        end
+      else
+        {:error, Error.push_notification_not_supported()}
+      end
+    end
+
+    @impl A2A.JSONRPC
+    def handle_get_push_config(task_id, config_id, _params, %{agent: agent}) do
+      task_store = get_task_store(agent)
+
+      if task_store do
+        {store_mod, store_ref} = task_store
+
+        case store_mod.get_push_config(store_ref, task_id, config_id) do
+          {:ok, _} = ok -> ok
+          {:error, :not_found} -> {:error, Error.task_not_found("Push config not found")}
+        end
+      else
+        {:error, Error.push_notification_not_supported()}
+      end
+    end
+
+    @impl A2A.JSONRPC
+    def handle_list_push_configs(task_id, _params, %{agent: agent}) do
+      task_store = get_task_store(agent)
+
+      if task_store do
+        {store_mod, store_ref} = task_store
+        store_mod.list_push_configs(store_ref, task_id)
+      else
+        {:error, Error.push_notification_not_supported()}
+      end
+    end
+
+    @impl A2A.JSONRPC
+    def handle_delete_push_config(task_id, config_id, _params, %{agent: agent}) do
+      task_store = get_task_store(agent)
+
+      if task_store do
+        {store_mod, store_ref} = task_store
+
+        case store_mod.delete_push_config(store_ref, task_id, config_id) do
+          :ok -> :ok
+          {:error, :not_found} -> {:error, Error.task_not_found("Push config not found")}
+        end
+      else
+        {:error, Error.push_notification_not_supported()}
+      end
+    end
+
+    defp get_task_store(agent) do
+      try do
+        case GenServer.call(agent, :get_task_store) do
+          nil -> nil
+          store -> store
+        end
+      catch
+        :exit, _ -> nil
+      end
+    end
+
     # -- Helpers ---------------------------------------------------------------
 
     defp build_call_opts(params, plug_opts) do

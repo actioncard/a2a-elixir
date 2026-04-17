@@ -70,6 +70,48 @@ defmodule A2A.TaskStore.ETS do
     |> A2A.Task.Filter.apply(opts)
   end
 
+  # --- Push notification config callbacks ---
+
+  @impl A2A.TaskStore
+  def set_push_config(table, %A2A.PushNotificationConfig{} = config) do
+    key = {:push_config, config.task_id, config.id}
+    :ets.insert(table, {key, config})
+    {:ok, config}
+  end
+
+  @impl A2A.TaskStore
+  def get_push_config(table, task_id, config_id) do
+    key = {:push_config, task_id, config_id}
+
+    case :ets.lookup(table, key) do
+      [{^key, config}] -> {:ok, config}
+      [] -> {:error, :not_found}
+    end
+  end
+
+  @impl A2A.TaskStore
+  def list_push_configs(table, task_id) do
+    configs =
+      :ets.match_object(table, {{:push_config, task_id, :_}, :_})
+      |> Enum.map(fn {_key, config} -> config end)
+
+    {:ok, configs}
+  end
+
+  @impl A2A.TaskStore
+  def delete_push_config(table, task_id, config_id) do
+    key = {:push_config, task_id, config_id}
+
+    case :ets.lookup(table, key) do
+      [{^key, _}] ->
+        :ets.delete(table, key)
+        :ok
+
+      [] ->
+        {:error, :not_found}
+    end
+  end
+
   # --- GenServer callbacks ---
 
   @impl GenServer

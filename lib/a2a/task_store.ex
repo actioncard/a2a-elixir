@@ -61,5 +61,21 @@ defmodule A2A.TaskStore do
   """
   @callback list_all(ref(), opts :: keyword()) :: {:ok, map()}
 
-  @optional_callbacks list_all: 2
+  @callback set_push_config(ref(), A2A.PushNotificationConfig.t()) ::
+              {:ok, A2A.PushNotificationConfig.t()} | {:error, term()}
+
+  @callback get_push_config(ref(), task_id :: String.t(), config_id :: String.t()) ::
+              {:ok, A2A.PushNotificationConfig.t()} | {:error, :not_found}
+
+  @callback list_push_configs(ref(), task_id :: String.t()) ::
+              {:ok, [A2A.PushNotificationConfig.t()]}
+
+  @callback delete_push_config(ref(), task_id :: String.t(), config_id :: String.t()) ::
+              :ok | {:error, :not_found}
+
+  @optional_callbacks list_all: 2,
+                      set_push_config: 2,
+                      get_push_config: 3,
+                      list_push_configs: 2,
+                      delete_push_config: 3
 end

@@ -354,6 +354,10 @@ defmodule A2A.Agent do
         {:reply, __MODULE__.agent_card(), state}
       end
 
+      def handle_call(:get_task_store, _from, state) do
+        {:reply, state.task_store, state}
+      end
+
       @impl GenServer
       def handle_cast({:stream_done, task_id, parts}, state) do
         case A2A.Agent.State.get_task(state, task_id) do
