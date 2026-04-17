@@ -14,7 +14,8 @@ defmodule A2A.Message do
           task_id: String.t() | nil,
           context_id: String.t() | nil,
           metadata: map(),
-          extensions: map()
+          extensions: [String.t()] | map(),
+          reference_task_ids: [String.t()]
         }
 
   @enforce_keys [:role, :parts]
@@ -25,7 +26,8 @@ defmodule A2A.Message do
     :context_id,
     parts: [],
     metadata: %{},
-    extensions: %{}
+    extensions: [],
+    reference_task_ids: []
   ]
 
   @doc """
