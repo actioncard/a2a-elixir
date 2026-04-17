@@ -116,7 +116,8 @@ if Code.ensure_loaded?(Plug) do
         agent_card_path: Keyword.get(opts, :agent_card_path, [".well-known", "agent-card.json"]),
         json_rpc_path: Keyword.get(opts, :json_rpc_path, []),
         agent_card_opts: Keyword.get(opts, :agent_card_opts, []),
-        metadata: Keyword.get(opts, :metadata, %{})
+        metadata: Keyword.get(opts, :metadata, %{}),
+        supported_versions: Keyword.get(opts, :supported_versions, ["1.0", "1.0.0"])
       }
     end
 
@@ -129,7 +130,20 @@ if Code.ensure_loaded?(Plug) do
 
     def call(%{method: "POST", path_info: path} = conn, %{json_rpc_path: path} = opts) do
       resolved = resolve_opts(conn, opts)
-      handle_json_rpc(conn, resolved)
+
+      case validate_version(conn, resolved) do
+        :ok ->
+          conn
+          |> put_resp_header("a2a-version", hd(resolved.supported_versions))
+          |> handle_json_rpc(resolved)
+
+        {:error, version} ->
+          error = Error.version_not_supported("Unsupported version: #{version}")
+
+          conn
+          |> put_resp_content_type("application/json")
+          |> send_resp(200, Jason.encode!(Response.error(nil, error)))
+      end
     end
 
     def call(%{path_info: path} = conn, %{agent_card_path: path}) do
@@ -140,6 +154,20 @@ if Code.ensure_loaded?(Plug) do
 
     def call(conn, _opts) do
       send_resp(conn, 404, "Not Found")
+    end
+
+    # -- Version validation ----------------------------------------------------
+
+    defp validate_version(conn, opts) do
+      case get_req_header(conn, "a2a-version") do
+        [] ->
+          :ok
+
+        [version | _] ->
+          if version in opts.supported_versions,
+            do: :ok,
+            else: {:error, version}
+      end
     end
 
     # -- Option resolution -----------------------------------------------------

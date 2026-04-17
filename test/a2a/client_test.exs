@@ -373,4 +373,47 @@ defmodule A2A.ClientTest do
       assert {:ok, %A2A.Task{}} = Client.send_message(client, "Hello!")
     end
   end
+
+  # -------------------------------------------------------------------
+  # A2A-Version header
+  # -------------------------------------------------------------------
+
+  describe "A2A-Version header" do
+    test "send_message includes A2A-Version: 1.0 header" do
+      plug = fn conn ->
+        version = Plug.Conn.get_req_header(conn, "a2a-version")
+        assert version == ["1.0"]
+
+        result = %{"task" => @task_json}
+        json_resp(conn, 200, jsonrpc_success(result))
+      end
+
+      client = Client.new("https://agent.example.com", plug: plug)
+      assert {:ok, %A2A.Task{}} = Client.send_message(client, "Hello!")
+    end
+
+    test "get_task includes A2A-Version: 1.0 header" do
+      plug = fn conn ->
+        version = Plug.Conn.get_req_header(conn, "a2a-version")
+        assert version == ["1.0"]
+
+        json_resp(conn, 200, jsonrpc_success(@task_json))
+      end
+
+      client = Client.new("https://agent.example.com", plug: plug)
+      assert {:ok, %A2A.Task{}} = Client.get_task(client, "tsk-123")
+    end
+
+    test "cancel_task includes A2A-Version: 1.0 header" do
+      plug = fn conn ->
+        version = Plug.Conn.get_req_header(conn, "a2a-version")
+        assert version == ["1.0"]
+
+        json_resp(conn, 200, jsonrpc_success(@task_json))
+      end
+
+      client = Client.new("https://agent.example.com", plug: plug)
+      assert {:ok, %A2A.Task{}} = Client.cancel_task(client, "tsk-123")
+    end
+  end
 end

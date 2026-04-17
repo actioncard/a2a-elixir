@@ -119,6 +119,16 @@ defmodule A2A.JSONRPC.Error do
     }
   end
 
+  @doc "Builds a version not supported error (-32009)."
+  @spec version_not_supported(term()) :: t()
+  def version_not_supported(data \\ nil) do
+    %__MODULE__{
+      code: -32_009,
+      message: "Version not supported",
+      data: data
+    }
+  end
+
   @doc """
   Converts an error struct to a JSON-ready map.
 
