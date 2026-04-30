@@ -30,6 +30,12 @@ defmodule A2A.PlugTest do
     }
   end
 
+  defp owner_authorizer do
+    fn _operation, task, %{metadata: metadata} ->
+      metadata["user_id"] == task.metadata["owner_id"]
+    end
+  end
+
   defp json_body(conn) do
     Jason.decode!(conn.resp_body)
   end
@@ -191,6 +197,49 @@ defmodule A2A.PlugTest do
       body = json_body(conn)
       assert body["error"]["code"] == -32_001
     end
+
+    test "authorize_task denies access without leaking task existence", %{agent: agent} do
+      opts = plug_opts(agent, authorize_task: owner_authorizer())
+
+      send_conn =
+        json_rpc_conn(
+          "message/send",
+          Map.put(message_params(), "metadata", %{"owner_id" => "u-1"})
+        )
+        |> A2A.Plug.call(opts)
+
+      task_id = json_body(send_conn)["result"]["task"]["id"]
+
+      conn =
+        json_rpc_conn("tasks/get", %{"id" => task_id})
+        |> A2A.Plug.put_metadata(%{"user_id" => "u-2"})
+        |> A2A.Plug.call(opts)
+
+      body = json_body(conn)
+      assert body["error"]["code"] == -32_001
+      assert body["error"]["message"] == "Task not found"
+    end
+
+    test "authorize_task allows matching task owner", %{agent: agent} do
+      opts = plug_opts(agent, authorize_task: owner_authorizer())
+
+      send_conn =
+        json_rpc_conn(
+          "message/send",
+          Map.put(message_params(), "metadata", %{"owner_id" => "u-1"})
+        )
+        |> A2A.Plug.call(opts)
+
+      task_id = json_body(send_conn)["result"]["task"]["id"]
+
+      conn =
+        json_rpc_conn("tasks/get", %{"id" => task_id})
+        |> A2A.Plug.put_metadata(%{"user_id" => "u-1"})
+        |> A2A.Plug.call(opts)
+
+      body = json_body(conn)
+      assert body["result"]["id"] == task_id
+    end
   end
 
   # -- tasks/cancel ------------------------------------------------------------
@@ -227,6 +276,66 @@ defmodule A2A.PlugTest do
 
       body = json_body(conn)
       assert body["error"]["code"] == -32_001
+    end
+
+    test "authorize_task denies cancel before mutating task" do
+      agent = start_supervised!({A2A.Test.MultiTurnAgent, [name: nil]})
+      opts = plug_opts(agent, authorize_task: owner_authorizer())
+
+      send_conn =
+        json_rpc_conn(
+          "message/send",
+          message_params("order pizza") |> Map.put("metadata", %{"owner_id" => "u-1"})
+        )
+        |> A2A.Plug.call(opts)
+
+      task_id = json_body(send_conn)["result"]["task"]["id"]
+
+      denied_conn =
+        json_rpc_conn("tasks/cancel", %{"id" => task_id})
+        |> A2A.Plug.put_metadata(%{"user_id" => "u-2"})
+        |> A2A.Plug.call(opts)
+
+      assert json_body(denied_conn)["error"]["code"] == -32_001
+
+      get_conn =
+        json_rpc_conn("tasks/get", %{"id" => task_id})
+        |> A2A.Plug.put_metadata(%{"user_id" => "u-1"})
+        |> A2A.Plug.call(opts)
+
+      assert json_body(get_conn)["result"]["status"]["state"] == "TASK_STATE_INPUT_REQUIRED"
+    end
+  end
+
+  # -- tasks/list --------------------------------------------------------------
+
+  describe "tasks/list" do
+    test "authorize_task filters tasks from list results", %{agent: agent} do
+      opts = plug_opts(agent, authorize_task: owner_authorizer())
+
+      task_ids =
+        for owner_id <- ["u-1", "u-2"] do
+          conn =
+            json_rpc_conn(
+              "message/send",
+              message_params("hello #{owner_id}")
+              |> Map.put("metadata", %{"owner_id" => owner_id})
+            )
+            |> A2A.Plug.call(opts)
+
+          json_body(conn)["result"]["task"]["id"]
+        end
+
+      conn =
+        json_rpc_conn("tasks/list", %{})
+        |> A2A.Plug.put_metadata(%{"user_id" => "u-1"})
+        |> A2A.Plug.call(opts)
+
+      body = json_body(conn)
+
+      assert Enum.map(body["result"]["tasks"], & &1["id"]) == [List.first(task_ids)]
+      assert body["result"]["totalSize"] == 1
+      assert body["result"]["pageSize"] == 1
     end
   end
 

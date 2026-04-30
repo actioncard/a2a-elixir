@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `A2A.Plug` task-level authorization hook for `tasks/get`, `tasks/cancel`, and
+  `tasks/list`
+
 ## [0.2.0] - 2026-03-06
 
 ### Added
