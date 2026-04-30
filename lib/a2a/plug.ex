@@ -32,6 +32,10 @@ if Code.ensure_loaded?(Plug) do
     - `:metadata` — static metadata merged into every JSON-RPC call
       (default: `%{}`). Useful for deployment-level metadata like
       `%{"env" => "prod"}`. Overridden per-request by `put_metadata/2`.
+    - `:authorize_task` — optional authorization callback for task-scoped
+      operations. Called as `(operation, task, context)` before returning,
+      canceling, or listing tasks. Denied `tasks/get` and `tasks/cancel`
+      requests return `TaskNotFoundError` so task IDs are not leaked.
 
     ## Per-Request Overrides
 
@@ -116,7 +120,8 @@ if Code.ensure_loaded?(Plug) do
         agent_card_path: Keyword.get(opts, :agent_card_path, [".well-known", "agent-card.json"]),
         json_rpc_path: Keyword.get(opts, :json_rpc_path, []),
         agent_card_opts: Keyword.get(opts, :agent_card_opts, []),
-        metadata: Keyword.get(opts, :metadata, %{})
+        metadata: Keyword.get(opts, :metadata, %{}),
+        authorize_task: Keyword.get(opts, :authorize_task)
       }
     end
 
@@ -271,35 +276,38 @@ if Code.ensure_loaded?(Plug) do
     end
 
     @impl A2A.JSONRPC
-    def handle_get(task_id, _params, %{agent: agent}) do
+    def handle_get(task_id, params, %{agent: agent, opts: plug_opts}) do
       case GenServer.call(agent, {:get_task, task_id}) do
-        {:ok, task} -> {:ok, task}
+        {:ok, task} -> authorize_task(:get, task, params, plug_opts)
         {:error, :not_found} -> {:error, Error.task_not_found()}
       end
     end
 
     @impl A2A.JSONRPC
-    def handle_cancel(task_id, _params, %{agent: agent}) do
-      case GenServer.call(agent, {:cancel, task_id}) do
-        :ok ->
-          case GenServer.call(agent, {:get_task, task_id}) do
-            {:ok, task} -> {:ok, task}
-            {:error, _} -> {:error, Error.task_not_found()}
-          end
+    def handle_cancel(task_id, params, %{agent: agent, opts: plug_opts}) do
+      with {:ok, task} <- fetch_task(agent, task_id),
+           {:ok, _task} <- authorize_task(:cancel, task, params, plug_opts) do
+        case GenServer.call(agent, {:cancel, task_id}) do
+          :ok ->
+            fetch_task(agent, task_id)
 
-        {:error, :not_found} ->
-          {:error, Error.task_not_found()}
+          {:error, :not_found} ->
+            {:error, Error.task_not_found()}
 
-        {:error, reason} ->
-          {:error, Error.task_not_cancelable(inspect(reason))}
+          {:error, reason} ->
+            {:error, Error.task_not_cancelable(inspect(reason))}
+        end
+      else
+        {:error, :not_found} -> {:error, Error.task_not_found()}
+        {:error, %Error{} = error} -> {:error, error}
       end
     end
 
     @impl A2A.JSONRPC
-    def handle_list(params, %{agent: agent}) do
+    def handle_list(params, %{agent: agent, opts: plug_opts}) do
       case GenServer.call(agent, {:list_tasks, params}) do
         {:ok, result} ->
-          {:ok, result}
+          {:ok, authorize_task_list(result, params, plug_opts)}
 
         {:error, :invalid_page_token} ->
           {:error, Error.invalid_params("\"pageToken\" is invalid")}
@@ -311,11 +319,63 @@ if Code.ensure_loaded?(Plug) do
 
     # -- Helpers ---------------------------------------------------------------
 
+    defp fetch_task(agent, task_id) do
+      case GenServer.call(agent, {:get_task, task_id}) do
+        {:ok, task} -> {:ok, task}
+        {:error, :not_found} -> {:error, :not_found}
+      end
+    end
+
+    defp authorize_task(_operation, task, _params, %{authorize_task: nil}), do: {:ok, task}
+
+    defp authorize_task(operation, task, params, plug_opts) do
+      context = authorization_context(params, plug_opts)
+
+      case call_authorizer(plug_opts.authorize_task, operation, task, context) do
+        :ok -> {:ok, task}
+        true -> {:ok, task}
+        {:ok, true} -> {:ok, task}
+        {:ok, _identity} -> {:ok, task}
+        {:error, %Error{} = error} -> {:error, error}
+        _deny -> {:error, Error.task_not_found()}
+      end
+    end
+
+    defp authorize_task_list(result, _params, %{authorize_task: nil}), do: result
+
+    defp authorize_task_list(%{tasks: tasks} = result, params, plug_opts) do
+      authorized =
+        Enum.filter(tasks, fn task ->
+          match?({:ok, ^task}, authorize_task(:list, task, params, plug_opts))
+        end)
+
+      %{
+        result
+        | tasks: authorized,
+          total_size: length(authorized),
+          page_size: length(authorized)
+      }
+    end
+
+    defp call_authorizer(fun, operation, task, context) when is_function(fun, 3) do
+      fun.(operation, task, context)
+    end
+
+    defp call_authorizer(fun, operation, task, _context) when is_function(fun, 2) do
+      fun.(operation, task)
+    end
+
+    defp call_authorizer({module, function}, operation, task, context) do
+      apply(module, function, [operation, task, context])
+    end
+
+    defp authorization_context(params, plug_opts) do
+      %{metadata: request_metadata(params, plug_opts), params: params}
+    end
+
     defp build_call_opts(params, plug_opts) do
       # 3-layer metadata merge: init → conn.private → JSON-RPC params
-      metadata =
-        plug_opts.metadata
-        |> merge_unless_nil(params["metadata"])
+      metadata = request_metadata(params, plug_opts)
 
       []
       |> maybe_put(:task_id, params["id"])
@@ -325,6 +385,10 @@ if Code.ensure_loaded?(Plug) do
 
     defp merge_unless_nil(base, nil), do: base
     defp merge_unless_nil(base, override), do: Map.merge(base, override)
+
+    defp request_metadata(params, plug_opts) do
+      merge_unless_nil(plug_opts.metadata, params["metadata"])
+    end
 
     defp maybe_put(opts, _key, nil), do: opts
     defp maybe_put(opts, key, val), do: [{key, val} | opts]

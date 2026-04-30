@@ -68,6 +68,25 @@ forward "/a2a", A2A.Plug,
 
 The agent card is served at `GET /.well-known/agent-card.json` by default.
 
+### Task Access Control
+
+`A2A.Plug` accepts an optional `:authorize_task` callback for task-scoped
+operations:
+
+```elixir
+forward "/a2a", A2A.Plug,
+  agent: MyAgent,
+  base_url: "http://localhost:4000/a2a",
+  authorize_task: fn operation, task, %{metadata: metadata} ->
+    same_tenant? = metadata["tenant_id"] == task.metadata["tenant_id"]
+    same_tenant? and operation in [:get, :cancel, :list]
+  end
+```
+
+The callback runs before `tasks/get`, `tasks/cancel`, and `tasks/list` responses.
+Denied `tasks/get` and `tasks/cancel` requests return `TaskNotFoundError` so
+callers cannot distinguish nonexistent tasks from tasks they cannot access.
+
 ## Calling Remote Agents
 
 `A2A.Client` discovers and communicates with remote A2A agents over HTTP. Requires the `req` optional dependency.
@@ -222,7 +241,8 @@ Key A2A spec features not yet covered:
 - **REST / gRPC transports** — only JSON-RPC is supported
 - **Version negotiation** — hardcoded to A2A v0.3
 - **Task resubscribe** — reconnecting to active SSE streams
-- **Security middleware** — auth plug, agent card signatures, task-level ACL (security scheme data modeling is complete)
+- **Security middleware** — agent card signatures and OAuth flows (auth plug,
+  task ACL hook, and security scheme data modeling are complete)
 
 See [SPEC.md](SPEC.md) for full details and roadmap.
 

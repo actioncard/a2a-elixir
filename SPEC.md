@@ -205,11 +205,21 @@ flow built into the client.
 ### Task-Level Access Control
 
 The spec states: "Servers MUST NOT reveal the existence of resources the client
-is not authorized to access." Currently any caller can access any task by ID.
+is not authorized to access." `A2A.Plug` now supports an `:authorize_task`
+callback for task-scoped JSON-RPC operations.
 
-A callback or plug that maps authenticated identity to allowed task IDs /
-context IDs. The runtime would check this before returning task data from
-`tasks/get` or `tasks/cancel`.
+- `tasks/get` and `tasks/cancel` call the callback before returning or mutating a
+  task. Denied requests return `TaskNotFoundError` so task IDs are not leaked.
+- `tasks/list` filters the returned page through the same callback.
+- The callback receives `(operation, task, context)` where `operation` is
+  `:get`, `:cancel`, or `:list`, and `context.metadata` contains the resolved
+  Plug metadata, including `A2A.Plug.Auth` identity under `"a2a.auth"` when that
+  plug is used.
+
+Remaining hardening:
+
+- Move authorization down into task stores that can filter before pagination.
+- Add store-specific examples for tenant and user ownership policies.
 
 ### Agent Card Signature Verification
 
@@ -228,7 +238,7 @@ verification. Not yet implemented. Would require:
 1. Agent card signature verification
 2. Authenticated extended card endpoint
 3. Client-side OAuth 2.0 flows
-4. Task-level access control
+4. Store-level authorization filters
 
 ---
 
