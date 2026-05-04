@@ -10,7 +10,8 @@ defmodule A2A.Artifact do
           name: String.t() | nil,
           description: String.t() | nil,
           parts: [A2A.Part.t()],
-          metadata: map()
+          metadata: map(),
+          extensions: [String.t()]
         }
 
   @enforce_keys [:parts]
@@ -19,7 +20,8 @@ defmodule A2A.Artifact do
     :name,
     :description,
     parts: [],
-    metadata: %{}
+    metadata: %{},
+    extensions: []
   ]
 
   @doc """

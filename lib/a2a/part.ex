@@ -19,10 +19,12 @@ defmodule A2A.Part.Text do
 
   @type t :: %__MODULE__{
           text: String.t(),
-          metadata: map()
+          metadata: map(),
+          media_type: String.t() | nil,
+          filename: String.t() | nil
         }
 
-  defstruct text: "", metadata: %{}
+  defstruct text: "", metadata: %{}, media_type: nil, filename: nil
 
   @doc """
   Creates a new text part.
@@ -40,11 +42,13 @@ defmodule A2A.Part.File do
 
   @type t :: %__MODULE__{
           file: A2A.FileContent.t(),
-          metadata: map()
+          metadata: map(),
+          media_type: String.t() | nil,
+          filename: String.t() | nil
         }
 
   @enforce_keys [:file]
-  defstruct file: nil, metadata: %{}
+  defstruct file: nil, metadata: %{}, media_type: nil, filename: nil
 
   @doc """
   Creates a new file part.
@@ -62,10 +66,12 @@ defmodule A2A.Part.Data do
 
   @type t :: %__MODULE__{
           data: map(),
-          metadata: map()
+          metadata: map(),
+          media_type: String.t() | nil,
+          filename: String.t() | nil
         }
 
-  defstruct data: %{}, metadata: %{}
+  defstruct data: %{}, metadata: %{}, media_type: nil, filename: nil
 
   @doc """
   Creates a new data part.
