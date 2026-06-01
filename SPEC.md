@@ -316,14 +316,11 @@ forward compatibility with newer spec versions:
 
 ### Extension Metadata Handling
 
-The A2A spec supports extension metadata via HTTP headers and nested metadata
-fields. Not yet implemented. Would require:
-
-- Parsing `a2a-extensions` / `x-a2a-extensions` HTTP headers
-- `A2A.Extension` module with helpers for getting/putting extension metadata
-  on requests and responses
-- `missing_required/2` to check whether required extensions declared by an
-  agent are present in a request
+Implemented. See `A2A.Extension` for the behaviour, `A2A.Plug` and
+`A2A.Client` for `A2A-Extensions` header negotiation, and
+`A2A.Extension.Timestamp` for a reference profile-extension. Method
+extensions (registering new RPC methods) and state-machine extensions
+remain deferred until a concrete user emerges.
 
 ---
 

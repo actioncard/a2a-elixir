@@ -71,6 +71,55 @@ defmodule A2A.Extension do
   `context.extensions`, a `%{uri => activation}` map. The
   `A2A.Extension.fetch/2` and `A2A.Extension.activated?/2` helpers look up
   by module rather than URI string.
+
+      def handle_message(message, context) do
+        case A2A.Extension.fetch(context, MyApp.TimestampExtension) do
+          {:ok, started_at} -> use_timestamp(message, started_at)
+          :error -> handle_without(message)
+        end
+      end
+
+  ## Configuring extensions
+
+  Server side, pass `:extensions` to `A2A.Plug`. The configured
+  declarations are merged into `capabilities.extensions` on the served
+  agent card, and the negotiation pipeline runs around every JSON-RPC
+  dispatch.
+
+      # Standalone with Bandit
+      Bandit.start_link(
+        plug: {A2A.Plug,
+          agent: MyAgent,
+          base_url: "http://localhost:4000",
+          extensions: [A2A.Extension.Timestamp, {MyApp.Passport, issuer: "acme"}]}
+      )
+
+      # Or in a Phoenix router
+      forward "/a2a", A2A.Plug,
+        agent: MyAgent,
+        base_url: "http://localhost:4000/a2a",
+        extensions: [A2A.Extension.Timestamp]
+
+  Client side, pass `:extensions` to `A2A.Client.new/2`. The configured
+  URIs are sent in the `A2A-Extensions` request header on every call.
+  `A2A.Client.parse_extensions_header/1` and
+  `A2A.Client.activated/2` read the server's response header to discover
+  which extensions actually ran.
+
+      client = A2A.Client.new("http://localhost:4000",
+        extensions: [A2A.Extension.Timestamp])
+
+      {:ok, task} = A2A.Client.send_message(client, "hi")
+      task.metadata[A2A.Extension.Timestamp.uri()]
+      #=> %{"received_at" => ..., "completed_at" => ...}
+
+  ## Reference
+
+  `A2A.Extension.Timestamp` ships in-tree as a complete profile-extension
+  example covering `c:declaration/1`, `c:activate/3`,
+  `c:handle_request/3`, and `c:handle_response/3`. See
+  [`examples/extensions.exs`](https://github.com/actioncard/a2a-elixir/blob/main/examples/extensions.exs)
+  for an end-to-end runnable demo.
   """
 
   alias A2A.{Artifact, JSONRPC, Message, Task}
