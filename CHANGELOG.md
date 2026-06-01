@@ -11,6 +11,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `A2A.Plug` task-level authorization hook for `tasks/get`, `tasks/cancel`, and
   `tasks/list`
+- A2A v1.0 wire format on encode: flat `Part` (no `kind`, with `text` /
+  `data` / `raw` / `url` / `mediaType` / `filename`); `Task`, `Message`, and
+  `Artifact` no longer carry a `kind` field; AgentCard top-level `url` and
+  `protocolVersion` removed (now per-interface under `supportedInterfaces[]`).
+  Decoder accepts both v1.0 and the legacy v0.3 nested-`file` form, so v0.3
+  clients keep working.
+- `Message.reference_task_ids`, `Artifact.extensions`, and
+  `AgentCard.signatures` struct fields for v1.0 data carriage.
+
+### Changed
+
+- `TaskStatus.timestamp` is now serialized with a `Z` suffix (UTC) per the
+  v1.0 schema timestamp regex.
 
 ## [0.2.0] - 2026-03-06
 

@@ -13,6 +13,7 @@ defmodule A2A.Message do
           parts: [A2A.Part.t()],
           task_id: String.t() | nil,
           context_id: String.t() | nil,
+          reference_task_ids: [String.t()],
           metadata: map(),
           extensions: map()
         }
@@ -24,6 +25,7 @@ defmodule A2A.Message do
     :task_id,
     :context_id,
     parts: [],
+    reference_task_ids: [],
     metadata: %{},
     extensions: %{}
   ]

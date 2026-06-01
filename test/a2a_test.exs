@@ -95,7 +95,8 @@ defmodule A2ATest do
       card = A2A.get_agent_card(pid, base_url: "https://example.com/a2a")
 
       assert card["name"] == "echo"
-      assert card["url"] == "https://example.com/a2a"
+      refute Map.has_key?(card, "url")
+      assert [%{"url" => "https://example.com/a2a"} | _] = card["supportedInterfaces"]
       assert is_list(card["skills"])
     end
 
