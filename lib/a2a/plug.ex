@@ -36,6 +36,14 @@ if Code.ensure_loaded?(Plug) do
       operations. Called as `(operation, task, context)` before returning,
       canceling, or listing tasks. Denied `tasks/get` and `tasks/cancel`
       requests return `TaskNotFoundError` so task IDs are not leaked.
+    - `:extensions` — list of `A2A.Extension` modules (or `{module, opts}`
+      tuples) declaring protocol extensions this server supports. Required
+      extensions are validated against the client's `A2A-Extensions`
+      request header; missing required extensions return
+      `ExtensionSupportRequiredError` (-32008). The server sets the
+      `A2A-Extensions` response header to the URIs that were activated.
+      Declarations are merged into `capabilities.extensions` on the
+      served agent card.
 
     ## Per-Request Overrides
 
@@ -121,7 +129,8 @@ if Code.ensure_loaded?(Plug) do
         json_rpc_path: Keyword.get(opts, :json_rpc_path, []),
         agent_card_opts: Keyword.get(opts, :agent_card_opts, []),
         metadata: Keyword.get(opts, :metadata, %{}),
-        authorize_task: Keyword.get(opts, :authorize_task)
+        authorize_task: Keyword.get(opts, :authorize_task),
+        extensions: A2A.Extension.compile(Keyword.get(opts, :extensions, []))
       }
     end
 
@@ -176,11 +185,12 @@ if Code.ensure_loaded?(Plug) do
 
     defp serve_agent_card(conn, opts) do
       card = GenServer.call(opts.agent, :get_agent_card)
+      agent_card_opts = merge_extension_declarations(opts.agent_card_opts, opts.extensions)
 
       json =
         A2A.JSON.encode_agent_card(
           card,
-          [url: opts.base_url] ++ opts.agent_card_opts
+          [url: opts.base_url] ++ agent_card_opts
         )
 
       conn
@@ -188,12 +198,57 @@ if Code.ensure_loaded?(Plug) do
       |> send_resp(200, Jason.encode!(json))
     end
 
+    defp merge_extension_declarations(agent_card_opts, []), do: agent_card_opts
+
+    defp merge_extension_declarations(agent_card_opts, compiled) do
+      caps = Keyword.get(agent_card_opts, :capabilities, %{})
+      existing = Map.get(caps, :extensions, [])
+      existing_uris = MapSet.new(existing, & &1.uri)
+
+      new =
+        compiled
+        |> A2A.Extension.declarations()
+        |> Enum.reject(&MapSet.member?(existing_uris, &1.uri))
+
+      caps = Map.put(caps, :extensions, existing ++ new)
+      Keyword.put(agent_card_opts, :capabilities, caps)
+    end
+
     # -- JSON-RPC dispatch -----------------------------------------------------
 
     defp handle_json_rpc(conn, opts) do
+      requested = A2A.Extension.parse_header(get_req_header(conn, "a2a-extensions"))
+
+      with :ok <- A2A.Extension.validate_required(opts.extensions, requested),
+           {:ok, activations, activated_uris} <-
+             A2A.Extension.activate(opts.extensions, requested, %{conn: conn}) do
+        conn = put_extensions_response_header(conn, activated_uris)
+        dispatch_json_rpc(conn, opts, activations)
+      else
+        {:error, missing} when is_list(missing) ->
+          send_json(
+            conn,
+            Response.error(
+              nil,
+              Error.extension_support_required(
+                "Client missing required extensions: " <> Enum.join(missing, ", ")
+              )
+            )
+          )
+
+        {:error, %Error{} = err} ->
+          send_json(conn, Response.error(nil, err))
+      end
+    end
+
+    defp dispatch_json_rpc(conn, opts, activations) do
       case read_json_body(conn) do
         {:ok, decoded, conn} ->
-          context = %{agent: opts.agent, opts: opts}
+          context = %{
+            agent: opts.agent,
+            opts: opts,
+            extensions: activations
+          }
 
           case A2A.JSONRPC.handle(decoded, __MODULE__, context) do
             {:reply, response} ->
@@ -207,6 +262,7 @@ if Code.ensure_loaded?(Plug) do
                 |> build_call_opts(opts)
                 |> maybe_put_fallback(:task_id, message.task_id)
                 |> maybe_put_fallback(:context_id, message.context_id)
+                |> Keyword.put(:extensions, A2A.Extension.to_context_map(activations))
 
               A2A.Plug.SSE.stream_message(
                 conn,
@@ -229,6 +285,12 @@ if Code.ensure_loaded?(Plug) do
         {:error, reason} ->
           send_json(conn, Response.error(nil, Error.internal_error(inspect(reason))))
       end
+    end
+
+    defp put_extensions_response_header(conn, []), do: conn
+
+    defp put_extensions_response_header(conn, uris) do
+      put_resp_header(conn, "a2a-extensions", Enum.join(uris, ", "))
     end
 
     # Returns the decoded JSON body, handling both pre-parsed (Phoenix with
@@ -262,16 +324,27 @@ if Code.ensure_loaded?(Plug) do
     # -- JSONRPC behaviour callbacks -------------------------------------------
 
     @impl A2A.JSONRPC
-    def handle_send(message, params, %{agent: agent, opts: plug_opts}) do
-      call_opts =
-        params
-        |> build_call_opts(plug_opts)
-        |> maybe_put_fallback(:task_id, message.task_id)
-        |> maybe_put_fallback(:context_id, message.context_id)
+    def handle_send(message, params, ctx) do
+      %{agent: agent, opts: plug_opts} = ctx
+      activations = Map.get(ctx, :extensions, [])
 
-      case A2A.call(agent, message, call_opts) do
-        {:ok, task} -> {:ok, task}
-        {:error, reason} -> {:error, Error.internal_error(inspect(reason))}
+      with {:ok, message, params, activations} <-
+             A2A.Extension.run_request(activations, message, params) do
+        call_opts =
+          params
+          |> build_call_opts(plug_opts)
+          |> maybe_put_fallback(:task_id, message.task_id)
+          |> maybe_put_fallback(:context_id, message.context_id)
+          |> Keyword.put(:extensions, A2A.Extension.to_context_map(activations))
+
+        case A2A.call(agent, message, call_opts) do
+          {:ok, task} ->
+            {:ok, task, _activations} = A2A.Extension.run_response(activations, task, params)
+            {:ok, task}
+
+          {:error, reason} ->
+            {:error, Error.internal_error(inspect(reason))}
+        end
       end
     end
 

@@ -1362,6 +1362,53 @@ defmodule A2A.JSONTest do
 
       assert map["capabilities"]["extendedAgentCard"] == true
     end
+
+    test "encodes capabilities.extensions" do
+      card = %{name: "x", description: "x", version: "1", skills: [], opts: []}
+
+      extensions = [
+        %A2A.AgentExtension{
+          uri: "https://example.com/ext/timestamp",
+          description: "Adds timestamps"
+        },
+        %A2A.AgentExtension{
+          uri: "https://example.com/ext/passport",
+          required: true,
+          params: %{"version" => "1.0"}
+        }
+      ]
+
+      map =
+        JSON.encode_agent_card(card,
+          url: "https://example.com",
+          capabilities: %{extensions: extensions}
+        )
+
+      assert map["capabilities"]["extensions"] == [
+               %{
+                 "uri" => "https://example.com/ext/timestamp",
+                 "required" => false,
+                 "description" => "Adds timestamps"
+               },
+               %{
+                 "uri" => "https://example.com/ext/passport",
+                 "required" => true,
+                 "params" => %{"version" => "1.0"}
+               }
+             ]
+    end
+
+    test "omits capabilities.extensions when empty" do
+      card = %{name: "x", description: "x", version: "1", skills: [], opts: []}
+
+      map =
+        JSON.encode_agent_card(card,
+          url: "https://example.com",
+          capabilities: %{extensions: []}
+        )
+
+      refute Map.has_key?(map["capabilities"], "extensions")
+    end
   end
 
   describe "decode_agent_card with security schemes" do
@@ -1443,6 +1490,65 @@ defmodule A2A.JSONTest do
 
       {:ok, card} = JSON.decode_agent_card(map)
       assert card.capabilities.extended_agent_card == true
+    end
+
+    test "decodes capabilities.extensions" do
+      map = %{
+        "name" => "x",
+        "description" => "x",
+        "url" => "https://example.com",
+        "version" => "1",
+        "skills" => [],
+        "capabilities" => %{
+          "extensions" => [
+            %{
+              "uri" => "https://example.com/ext/timestamp",
+              "description" => "Adds timestamps",
+              "required" => false
+            },
+            %{
+              "uri" => "https://example.com/ext/passport",
+              "required" => true,
+              "params" => %{"version" => "1.0"}
+            }
+          ]
+        }
+      }
+
+      {:ok, card} = JSON.decode_agent_card(map)
+
+      assert card.capabilities.extensions == [
+               %A2A.AgentExtension{
+                 uri: "https://example.com/ext/timestamp",
+                 description: "Adds timestamps",
+                 required: false
+               },
+               %A2A.AgentExtension{
+                 uri: "https://example.com/ext/passport",
+                 required: true,
+                 params: %{"version" => "1.0"}
+               }
+             ]
+    end
+
+    test "roundtrips capabilities.extensions" do
+      card = %{name: "x", description: "x", version: "1", skills: [], opts: []}
+
+      extensions = [
+        %A2A.AgentExtension{uri: "https://example.com/ext/a", description: "A"},
+        %A2A.AgentExtension{uri: "https://example.com/ext/b", required: true}
+      ]
+
+      encoded =
+        JSON.encode_agent_card(card,
+          url: "https://example.com",
+          capabilities: %{streaming: true, extensions: extensions}
+        )
+
+      {:ok, decoded} = JSON.decode_agent_card(encoded)
+
+      assert decoded.capabilities.streaming == true
+      assert decoded.capabilities.extensions == extensions
     end
 
     test "roundtrip with security schemes" do

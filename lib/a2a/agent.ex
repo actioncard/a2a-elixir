@@ -154,7 +154,8 @@ defmodule A2A.Agent do
           task_id: String.t(),
           context_id: String.t() | nil,
           history: [A2A.Message.t()],
-          metadata: map()
+          metadata: map(),
+          extensions: %{optional(String.t()) => A2A.Extension.activation()}
         }
 
   @type reply ::
@@ -270,12 +271,13 @@ defmodule A2A.Agent do
         task_id = Keyword.get(opts, :task_id)
         context_id = Keyword.get(opts, :context_id)
         metadata = Keyword.get(opts, :metadata, %{})
+        extensions = Keyword.get(opts, :extensions, %{})
 
         result =
           if task_id do
             case A2A.Agent.State.get_task(state, task_id) do
               {:ok, task} ->
-                A2A.Agent.Runtime.continue_task(__MODULE__, message, task, state)
+                A2A.Agent.Runtime.continue_task(__MODULE__, message, task, state, extensions)
 
               {:error, :not_found} ->
                 {:error, :not_found}
@@ -287,7 +289,8 @@ defmodule A2A.Agent do
                message,
                context_id,
                state,
-               metadata
+               metadata,
+               extensions
              )}
           end
 
@@ -312,7 +315,8 @@ defmodule A2A.Agent do
                 task_id: task.id,
                 context_id: task.context_id,
                 history: task.history,
-                metadata: task.metadata
+                metadata: task.metadata,
+                extensions: %{}
               }
 
               span_meta = %{
