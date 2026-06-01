@@ -28,9 +28,11 @@ defmodule A2A.JSONRPCTest do
       assert response["jsonrpc"] == "2.0"
       assert response["id"] == 1
       assert %{"task" => task} = response["result"]
-      assert task["kind"] == "task"
+      refute Map.has_key?(task, "kind")
       assert task["status"]["state"] == "TASK_STATE_COMPLETED"
-      assert [%{"kind" => "message"}] = task["history"]
+      assert [msg] = task["history"]
+      refute Map.has_key?(msg, "kind")
+      assert msg["role"] == "ROLE_USER"
     end
 
     test "bad message returns invalid_params" do
@@ -159,7 +161,9 @@ defmodule A2A.JSONRPCTest do
       {:reply, response} =
         JSONRPC.handle(rpc("SendMessage", message_params()), @handler)
 
-      assert response["result"]["task"]["kind"] == "task"
+      task = response["result"]["task"]
+      assert is_binary(task["id"])
+      assert task["status"]["state"] == "TASK_STATE_COMPLETED"
     end
 
     test "SendStreamingMessage dispatches as message/stream" do

@@ -10,6 +10,7 @@ defmodule A2A.Artifact do
           name: String.t() | nil,
           description: String.t() | nil,
           parts: [A2A.Part.t()],
+          extensions: [String.t()],
           metadata: map()
         }
 
@@ -19,6 +20,7 @@ defmodule A2A.Artifact do
     :name,
     :description,
     parts: [],
+    extensions: [],
     metadata: %{}
   ]
 

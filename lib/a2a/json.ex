@@ -1,20 +1,25 @@
 defmodule A2A.JSON do
   @moduledoc """
-  Codec for converting between Elixir structs and the A2A v0.3 camelCase JSON wire format.
+  Codec for converting between Elixir structs and the A2A v1.0 camelCase JSON wire format.
 
   Produces intermediate maps (not JSON strings) suitable for composing with
   JSON-RPC envelopes. Use `Jason.encode!/1` on the result when you need a string.
+
+  Encoding emits the v1.0 flat shape (no `kind` discriminator, flat `Part`
+  with `text`/`data`/`raw`/`url` + `mediaType`/`filename`). Decoding accepts
+  both v1.0 and the legacy v0.3 shape (nested `file: {bytes|uri, mimeType}`
+  and `kind`-tagged parts) so v0.3 clients keep working.
 
   ## Encoding
 
       iex> part = A2A.Part.Text.new("hello")
       iex> {:ok, map} = A2A.JSON.encode(part)
       iex> map
-      %{"kind" => "text", "text" => "hello"}
+      %{"text" => "hello"}
 
   ## Decoding
 
-      iex> {:ok, part} = A2A.JSON.decode(%{"kind" => "text", "text" => "hello"}, :part)
+      iex> {:ok, part} = A2A.JSON.decode(%{"text" => "hello"}, :part)
       iex> part
       %A2A.Part.Text{text: "hello", metadata: %{}}
   """
@@ -94,8 +99,10 @@ defmodule A2A.JSON do
   def encode(%A2A.Task{} = task) do
     {:ok, status} = encode(task.status)
 
+    # contextId is REQUIRED on the wire (v0.3 TCK + protobuf default "") —
+    # emit an empty string when the struct field is nil.
     map =
-      %{"kind" => "task", "id" => task.id, "contextId" => task.context_id, "status" => status}
+      %{"id" => task.id, "contextId" => task.context_id || "", "status" => status}
       |> put_unless_empty("history", encode_list(task.history))
       |> put_unless_empty("artifacts", encode_list(task.artifacts))
       |> put_unless_empty("metadata", task.metadata)
@@ -115,13 +122,13 @@ defmodule A2A.JSON do
   def encode(%A2A.Message{} = msg) do
     map =
       %{
-        "kind" => "message",
         "role" => Map.fetch!(@role_to_string, msg.role),
         "parts" => encode_list(msg.parts)
       }
       |> put_unless_nil("messageId", msg.message_id)
       |> put_unless_nil("taskId", msg.task_id)
       |> put_unless_nil("contextId", msg.context_id)
+      |> put_unless_empty("referenceTaskIds", msg.reference_task_ids)
       |> put_unless_empty("metadata", msg.metadata)
       |> put_unless_empty("extensions", msg.extensions)
 
@@ -134,6 +141,7 @@ defmodule A2A.JSON do
       |> put_unless_nil("artifactId", artifact.artifact_id)
       |> put_unless_nil("name", artifact.name)
       |> put_unless_nil("description", artifact.description)
+      |> put_unless_empty("extensions", artifact.extensions)
       |> put_unless_empty("metadata", artifact.metadata)
 
     {:ok, map}
@@ -141,17 +149,19 @@ defmodule A2A.JSON do
 
   def encode(%A2A.Part.Text{} = part) do
     map =
-      %{"kind" => "text", "text" => part.text}
+      %{"text" => part.text}
       |> put_unless_empty("metadata", part.metadata)
 
     {:ok, map}
   end
 
-  def encode(%A2A.Part.File{} = part) do
-    {:ok, file} = encode(part.file)
-
+  def encode(%A2A.Part.File{file: %A2A.FileContent{} = fc} = part) do
     map =
-      %{"kind" => "file", "file" => file}
+      %{}
+      |> put_unless_nil("filename", fc.name)
+      |> put_unless_nil("mediaType", fc.mime_type)
+      |> put_unless_nil("url", fc.uri)
+      |> put_unless_nil("raw", encode_bytes(fc.bytes))
       |> put_unless_empty("metadata", part.metadata)
 
     {:ok, map}
@@ -159,7 +169,7 @@ defmodule A2A.JSON do
 
   def encode(%A2A.Part.Data{} = part) do
     map =
-      %{"kind" => "data", "data" => part.data}
+      %{"data" => part.data}
       |> put_unless_empty("metadata", part.metadata)
 
     {:ok, map}
@@ -227,21 +237,27 @@ defmodule A2A.JSON do
   @doc """
   Encodes an agent card map with options into the AgentCard JSON format.
 
+  In v1.0 the top-level `url` and `protocolVersion` fields are gone from the
+  wire format — both are per-interface. The `:url` option is still required
+  because it seeds the default `supportedInterfaces` entry; pass
+  `:supported_interfaces` directly to override.
+
   ## Options
 
-  - `:url` — the agent's endpoint URL (required)
+  - `:url` — agent endpoint URL, used as the default `supportedInterfaces[0].url`
   - `:capabilities` — `AgentCapabilities` map (default: `%{}`)
   - `:default_input_modes` — list of MIME types (default: `["text/plain"]`)
   - `:default_output_modes` — list of MIME types (default: `["text/plain"]`)
   - `:provider` — `%{organization: ..., url: ...}` map
   - `:documentation_url` — URL string
   - `:icon_url` — URL string
-  - `:protocol_version` — protocol version string
   - `:supported_interfaces` — list of `%{url: ..., protocol_binding: ...,
     protocol_version: ...}` maps. Defaults to a single JSON-RPC interface
     derived from `:url`.
   - `:security_schemes` — `%{name => %SecurityScheme.X{}}` map
   - `:security` — list of `%{name => scopes}` maps (OpenAPI-style)
+  - `:signatures` — list of JWS signature maps (each `%{"protected" => ...,
+    "signature" => ..., "header" => ...}`)
   """
   @spec encode_agent_card(A2A.Agent.card(), keyword()) :: map()
   def encode_agent_card(card, opts \\ []) do
@@ -273,7 +289,6 @@ defmodule A2A.JSON do
       %{
         "name" => card.name,
         "description" => card.description,
-        "url" => url,
         "version" => card.version,
         "skills" => skills,
         "capabilities" => caps,
@@ -284,9 +299,9 @@ defmodule A2A.JSON do
       |> put_unless_nil("provider", encode_provider(Keyword.get(opts, :provider)))
       |> put_unless_nil("documentationUrl", Keyword.get(opts, :documentation_url))
       |> put_unless_nil("iconUrl", Keyword.get(opts, :icon_url))
-      |> put_unless_nil("protocolVersion", Keyword.get(opts, :protocol_version))
       |> put_unless_empty("securitySchemes", encode_security_schemes(security_schemes))
       |> put_unless_empty("security", security)
+      |> put_unless_empty("signatures", Keyword.get(opts, :signatures, []))
 
     map
   end
@@ -315,10 +330,12 @@ defmodule A2A.JSON do
   def decode_agent_card(map) when is_map(map) do
     with {:ok, name} <- require_field(map, "name"),
          {:ok, description} <- require_field(map, "description"),
-         {:ok, url} <- require_field(map, "url"),
          {:ok, version} <- require_field(map, "version"),
          {:ok, skills_list} <- require_field(map, "skills"),
          {:ok, skills} <- decode_card_skills(skills_list) do
+      interfaces = decode_card_interfaces(Map.get(map, "supportedInterfaces", []))
+      url = Map.get(map, "url") || preferred_interface_url(interfaces)
+
       {:ok,
        %A2A.AgentCard{
          name: name,
@@ -333,12 +350,16 @@ defmodule A2A.JSON do
          documentation_url: Map.get(map, "documentationUrl"),
          icon_url: Map.get(map, "iconUrl"),
          protocol_version: Map.get(map, "protocolVersion"),
-         supported_interfaces: decode_card_interfaces(Map.get(map, "supportedInterfaces", [])),
+         supported_interfaces: interfaces,
          security_schemes: decode_card_security_schemes(Map.get(map, "securitySchemes", %{})),
-         security: Map.get(map, "security", [])
+         security: Map.get(map, "security", []),
+         signatures: Map.get(map, "signatures", [])
        }}
     end
   end
+
+  defp preferred_interface_url([%{url: url} | _]) when is_binary(url), do: url
+  defp preferred_interface_url(_), do: nil
 
   # -------------------------------------------------------------------
   # Decoding
@@ -412,6 +433,7 @@ defmodule A2A.JSON do
          parts: parts,
          task_id: Map.get(map, "taskId"),
          context_id: Map.get(map, "contextId"),
+         reference_task_ids: Map.get(map, "referenceTaskIds", []),
          metadata: Map.get(map, "metadata", %{}),
          extensions: Map.get(map, "extensions", %{})
        }}
@@ -427,6 +449,7 @@ defmodule A2A.JSON do
          name: Map.get(map, "name"),
          description: Map.get(map, "description"),
          parts: parts,
+         extensions: Map.get(map, "extensions", []),
          metadata: Map.get(map, "metadata", %{})
        }}
     end
@@ -518,7 +541,13 @@ defmodule A2A.JSON do
     Map.fetch!(@state_to_string, state)
   end
 
-  defp encode_timestamp(%DateTime{} = dt), do: DateTime.to_iso8601(dt)
+  defp encode_timestamp(%DateTime{} = dt) do
+    dt
+    |> DateTime.shift_zone!("Etc/UTC")
+    |> DateTime.to_iso8601(:extended)
+    |> String.replace_suffix("+00:00", "Z")
+  end
+
   defp encode_timestamp(nil), do: nil
 
   defp encode_bytes(nil), do: nil
@@ -683,12 +712,14 @@ defmodule A2A.JSON do
     end
   end
 
-  # v0.3: parts may omit "kind" — infer from content field presence
+  # Parts without "kind": v1.0 is flat ({"text"|"data"|"raw"|"url": ...}),
+  # v0.3 nests file content under {"file": {...}}.
   defp infer_part_type(map) do
     cond do
       Map.has_key?(map, "text") -> decode_text_part(map)
-      Map.has_key?(map, "file") -> decode_file_part(map)
       Map.has_key?(map, "data") -> decode_data_part(map)
+      Map.has_key?(map, "file") -> decode_file_part(map)
+      Map.has_key?(map, "raw") or Map.has_key?(map, "url") -> decode_flat_file_part(map)
       true -> {:error, {:missing_field, "kind"}}
     end
   end
@@ -719,6 +750,23 @@ defmodule A2A.JSON do
       {:ok,
        %A2A.Part.Data{
          data: data,
+         metadata: Map.get(map, "metadata", %{})
+       }}
+    end
+  end
+
+  defp decode_flat_file_part(map) do
+    with {:ok, bytes} <- decode_base64(Map.get(map, "raw")) do
+      file = %A2A.FileContent{
+        name: Map.get(map, "filename"),
+        mime_type: Map.get(map, "mediaType"),
+        bytes: bytes,
+        uri: Map.get(map, "url")
+      }
+
+      {:ok,
+       %A2A.Part.File{
+         file: file,
          metadata: Map.get(map, "metadata", %{})
        }}
     end

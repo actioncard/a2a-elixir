@@ -64,7 +64,9 @@ defmodule A2A.Plug.SSETest do
 
       assert first["jsonrpc"] == "2.0"
       assert first["id"] == 1
-      assert first["result"]["kind"] == "task"
+      assert is_binary(first["result"]["id"])
+      assert first["result"]["status"]["state"]
+      refute Map.has_key?(first["result"], "kind")
     end
 
     test "middle events are artifact updates", %{agent: agent} do

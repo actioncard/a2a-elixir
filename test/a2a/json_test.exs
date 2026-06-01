@@ -10,9 +10,10 @@ defmodule A2A.JSONTest do
   # -------------------------------------------------------------------
 
   describe "encode Part.Text" do
-    test "produces camelCase map" do
+    test "produces flat v1.0 map" do
       part = Part.Text.new("hello")
-      assert {:ok, %{"kind" => "text", "text" => "hello"}} = JSON.encode(part)
+      assert {:ok, %{"text" => "hello"} = map} = JSON.encode(part)
+      refute Map.has_key?(map, "kind")
     end
 
     test "omits empty metadata" do
@@ -27,7 +28,7 @@ defmodule A2A.JSONTest do
   end
 
   describe "encode Part.File" do
-    test "encodes file with bytes as base64" do
+    test "encodes bytes as flat v1.0 raw + mediaType + filename" do
       fc =
         FileContent.from_bytes("binary data",
           name: "f.bin",
@@ -37,28 +38,30 @@ defmodule A2A.JSONTest do
       part = Part.File.new(fc)
       {:ok, map} = JSON.encode(part)
 
-      assert map["kind"] == "file"
-      assert map["file"]["bytes"] == Base.encode64("binary data")
-      assert map["file"]["name"] == "f.bin"
-      assert map["file"]["mimeType"] == "application/octet-stream"
+      refute Map.has_key?(map, "kind")
+      refute Map.has_key?(map, "file")
+      assert map["raw"] == Base.encode64("binary data")
+      assert map["filename"] == "f.bin"
+      assert map["mediaType"] == "application/octet-stream"
     end
 
-    test "encodes file with URI" do
+    test "encodes URI as flat v1.0 url" do
       fc = FileContent.from_uri("https://example.com/file.pdf")
       part = Part.File.new(fc)
       {:ok, map} = JSON.encode(part)
 
-      assert map["file"]["uri"] == "https://example.com/file.pdf"
-      refute Map.has_key?(map["file"], "bytes")
+      assert map["url"] == "https://example.com/file.pdf"
+      refute Map.has_key?(map, "raw")
+      refute Map.has_key?(map, "file")
     end
   end
 
   describe "encode Part.Data" do
-    test "produces camelCase map" do
+    test "produces flat v1.0 map" do
       part = Part.Data.new(%{key: "val"})
       {:ok, map} = JSON.encode(part)
 
-      assert map["kind"] == "data"
+      refute Map.has_key?(map, "kind")
       assert map["data"] == %{key: "val"}
     end
   end
@@ -84,7 +87,7 @@ defmodule A2A.JSONTest do
   end
 
   describe "encode Message" do
-    test "produces camelCase map with kind" do
+    test "produces flat v1.0 camelCase map" do
       msg = %Message{
         message_id: "msg-1",
         role: :user,
@@ -95,12 +98,12 @@ defmodule A2A.JSONTest do
 
       {:ok, map} = JSON.encode(msg)
 
-      assert map["kind"] == "message"
+      refute Map.has_key?(map, "kind")
       assert map["messageId"] == "msg-1"
       assert map["role"] == "ROLE_USER"
       assert map["taskId"] == "tsk-1"
       assert map["contextId"] == "ctx-1"
-      assert [%{"kind" => "text", "text" => "hello"}] = map["parts"]
+      assert [%{"text" => "hello"}] = map["parts"]
     end
 
     test "omits nil optional fields" do
@@ -110,8 +113,15 @@ defmodule A2A.JSONTest do
       refute Map.has_key?(map, "messageId")
       refute Map.has_key?(map, "taskId")
       refute Map.has_key?(map, "contextId")
+      refute Map.has_key?(map, "referenceTaskIds")
       refute Map.has_key?(map, "metadata")
       refute Map.has_key?(map, "extensions")
+    end
+
+    test "emits referenceTaskIds when non-empty" do
+      msg = %Message{role: :user, parts: [Part.Text.new("x")], reference_task_ids: ["a", "b"]}
+      {:ok, map} = JSON.encode(msg)
+      assert map["referenceTaskIds"] == ["a", "b"]
     end
   end
 
@@ -130,7 +140,7 @@ defmodule A2A.JSONTest do
       assert map["artifactId"] == "art-1"
       assert map["name"] == "result"
       assert map["description"] == "desc"
-      assert [%{"kind" => "text"}] = map["parts"]
+      assert [%{"text" => "output"}] = map["parts"]
       assert map["metadata"] == %{type: "text"}
     end
 
@@ -141,7 +151,18 @@ defmodule A2A.JSONTest do
       refute Map.has_key?(map, "artifactId")
       refute Map.has_key?(map, "name")
       refute Map.has_key?(map, "description")
+      refute Map.has_key?(map, "extensions")
       refute Map.has_key?(map, "metadata")
+    end
+
+    test "emits extensions when non-empty" do
+      artifact = %Artifact{
+        parts: [Part.Text.new("x")],
+        extensions: ["https://example.com/ext"]
+      }
+
+      {:ok, map} = JSON.encode(artifact)
+      assert map["extensions"] == ["https://example.com/ext"]
     end
   end
 
@@ -164,17 +185,18 @@ defmodule A2A.JSONTest do
       assert map["state"] == "TASK_STATE_WORKING"
     end
 
-    test "encodes timestamp as ISO8601" do
+    test "encodes timestamp as ISO 8601 with Z suffix" do
       status = Task.Status.new(:submitted)
       {:ok, map} = JSON.encode(status)
       assert {:ok, _, _} = DateTime.from_iso8601(map["timestamp"])
+      assert map["timestamp"] =~ ~r/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/
     end
 
     test "encodes nested message" do
       msg = Message.new_agent("status info")
       status = Task.Status.new(:working, msg)
       {:ok, map} = JSON.encode(status)
-      assert map["message"]["kind"] == "message"
+      refute Map.has_key?(map["message"], "kind")
       assert map["message"]["role"] == "ROLE_AGENT"
     end
 
@@ -186,11 +208,11 @@ defmodule A2A.JSONTest do
   end
 
   describe "encode Task" do
-    test "produces full camelCase map with kind" do
+    test "produces flat v1.0 camelCase map" do
       task = Task.new(context_id: "ctx-1")
       {:ok, map} = JSON.encode(task)
 
-      assert map["kind"] == "task"
+      refute Map.has_key?(map, "kind")
       assert is_binary(map["id"])
       assert map["contextId"] == "ctx-1"
       assert map["status"]["state"] == "TASK_STATE_SUBMITTED"
@@ -202,6 +224,8 @@ defmodule A2A.JSONTest do
 
       refute Map.has_key?(map, "history")
       refute Map.has_key?(map, "artifacts")
+      # contextId is always emitted (defaults to "" when nil) — TCK requires it.
+      assert map["contextId"] == ""
     end
 
     test "includes non-empty history" do
@@ -209,7 +233,9 @@ defmodule A2A.JSONTest do
       task = Task.new(history: [msg])
       {:ok, map} = JSON.encode(task)
 
-      assert [%{"kind" => "message"}] = map["history"]
+      assert [m] = map["history"]
+      assert m["role"] == "ROLE_USER"
+      refute Map.has_key?(m, "kind")
     end
   end
 
@@ -706,6 +732,137 @@ defmodule A2A.JSONTest do
   end
 
   # -------------------------------------------------------------------
+  # v1.0 wire-format guards (mirror A2A v1.0 TCK DM-* assertions)
+  # -------------------------------------------------------------------
+
+  describe "v1.0 wire format" do
+    # Mirror of .tck-v1/tests/compatibility/core_operations/test_data_model.py
+    # _SNAKE_CASE_PATTERN — DM-SERIAL-001.
+    @snake_case ~r/^[a-z]+(_[a-z]+)+$/
+
+    defp collect_keys(map, acc) when is_map(map) do
+      map
+      |> Map.keys()
+      |> Enum.into(acc)
+      |> then(fn acc ->
+        Enum.reduce(map, acc, fn {_, v}, a -> collect_keys(v, a) end)
+      end)
+    end
+
+    defp collect_keys(list, acc) when is_list(list),
+      do: Enum.reduce(list, acc, &collect_keys/2)
+
+    defp collect_keys(_other, acc), do: acc
+
+    defp assert_no_snake_case(map) do
+      offending = map |> collect_keys(MapSet.new()) |> Enum.filter(&(&1 =~ @snake_case))
+      assert offending == [], "snake_case keys present: #{inspect(offending)}"
+    end
+
+    defp collect_values(map, key, acc) when is_map(map) do
+      acc = if Map.has_key?(map, key), do: [Map.get(map, key) | acc], else: acc
+      Enum.reduce(map, acc, fn {_, v}, a -> collect_values(v, key, a) end)
+    end
+
+    defp collect_values(list, key, acc) when is_list(list),
+      do: Enum.reduce(list, acc, fn item, a -> collect_values(item, key, a) end)
+
+    defp collect_values(_other, _key, acc), do: acc
+
+    test "Task / Message / Artifact have no snake_case keys" do
+      task = %Task{
+        id: "tsk-1",
+        context_id: "ctx-1",
+        status: Task.Status.new(:working),
+        history: [
+          %Message{
+            message_id: "m1",
+            role: :user,
+            parts: [Part.Text.new("hi")],
+            task_id: "tsk-1",
+            context_id: "ctx-1",
+            reference_task_ids: ["other"]
+          }
+        ],
+        artifacts: [%Artifact{artifact_id: "a1", parts: [Part.Text.new("x")]}]
+      }
+
+      assert_no_snake_case(JSON.encode!(task))
+    end
+
+    test "AgentCard has no snake_case keys" do
+      card = %{name: "n", description: "d", version: "1", skills: [], opts: []}
+      assert_no_snake_case(JSON.encode_agent_card(card, url: "https://example.com"))
+    end
+
+    test "enum values (state, role) serialize as strings" do
+      task = %Task{
+        id: "t",
+        status: Task.Status.new(:working, Message.new_agent("ok")),
+        history: [Message.new_user("hi")]
+      }
+
+      map = JSON.encode!(task)
+
+      for state <- collect_values(map, "state", []) do
+        assert is_binary(state), "state must be string, got #{inspect(state)}"
+      end
+
+      for role <- collect_values(map, "role", []) do
+        assert is_binary(role), "role must be string, got #{inspect(role)}"
+      end
+    end
+
+    test "TaskStatus timestamp matches ISO 8601 + Z (DM-SERIAL-003)" do
+      iso_z = ~r/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/
+
+      json_str =
+        Task.Status.new(:working)
+        |> JSON.encode!()
+        |> Jason.encode!()
+        |> Jason.decode!()
+
+      assert json_str["timestamp"] =~ iso_z
+    end
+
+    test "flat v1.0 file part decodes (raw / mediaType / filename)" do
+      map = %{
+        "raw" => Base.encode64("hello"),
+        "mediaType" => "text/plain",
+        "filename" => "greet.txt"
+      }
+
+      assert {:ok, %Part.File{file: %FileContent{} = fc}} = JSON.decode(map, :part)
+      assert fc.bytes == "hello"
+      assert fc.mime_type == "text/plain"
+      assert fc.name == "greet.txt"
+    end
+
+    test "flat v1.0 file part with url decodes" do
+      map = %{"url" => "https://example.com/f.pdf", "mediaType" => "application/pdf"}
+
+      assert {:ok, %Part.File{file: %FileContent{uri: "https://example.com/f.pdf"}}} =
+               JSON.decode(map, :part)
+    end
+
+    test "legacy v0.3 nested file part still decodes (backwards-compat)" do
+      legacy = %{
+        "kind" => "file",
+        "file" => %{
+          "bytes" => Base.encode64("hi"),
+          "mimeType" => "text/plain",
+          "name" => "f.txt"
+        }
+      }
+
+      assert {:ok, %Part.File{file: %FileContent{} = fc}} = JSON.decode(legacy, :part)
+      assert fc.bytes == "hi"
+      assert fc.mime_type == "text/plain"
+      assert fc.name == "f.txt"
+    end
+  end
+
+  # -------------------------------------------------------------------
   # Round-trips
   # -------------------------------------------------------------------
 
@@ -849,7 +1006,8 @@ defmodule A2A.JSONTest do
   describe "encode!/1" do
     test "returns map on success" do
       map = JSON.encode!(Part.Text.new("hi"))
-      assert %{"kind" => "text", "text" => "hi"} = map
+      assert %{"text" => "hi"} = map
+      refute Map.has_key?(map, "kind")
     end
 
     test "raises on error" do
@@ -861,7 +1019,7 @@ defmodule A2A.JSONTest do
 
   describe "decode!/2" do
     test "returns struct on success" do
-      part = JSON.decode!(%{"kind" => "text", "text" => "hi"}, :part)
+      part = JSON.decode!(%{"text" => "hi"}, :part)
       assert %Part.Text{text: "hi"} = part
     end
 
@@ -892,7 +1050,7 @@ defmodule A2A.JSONTest do
 
       assert map["name"] == "test-agent"
       assert map["description"] == "A test agent"
-      assert map["url"] == "https://example.com/a2a"
+      refute Map.has_key?(map, "url")
       assert map["version"] == "1.0.0"
       assert [%{"id" => "greet", "tags" => ["greeting"]}] = map["skills"]
       assert map["capabilities"] == %{}
@@ -955,7 +1113,7 @@ defmodule A2A.JSONTest do
           provider: %{organization: "Acme", url: "https://acme.example.com"},
           documentation_url: "https://docs.example.com",
           icon_url: "https://example.com/icon.png",
-          protocol_version: "0.3"
+          signatures: [%{"protected" => "p", "signature" => "s"}]
         )
 
       assert map["capabilities"] == %{"streaming" => true, "pushNotifications" => false}
@@ -963,7 +1121,9 @@ defmodule A2A.JSONTest do
       assert map["provider"] == %{"organization" => "Acme", "url" => "https://acme.example.com"}
       assert map["documentationUrl"] == "https://docs.example.com"
       assert map["iconUrl"] == "https://example.com/icon.png"
-      assert map["protocolVersion"] == "0.3"
+      assert map["signatures"] == [%{"protected" => "p", "signature" => "s"}]
+      refute Map.has_key?(map, "url")
+      refute Map.has_key?(map, "protocolVersion")
       assert [%{"url" => "https://example.com/a2a"}] = map["supportedInterfaces"]
     end
 
@@ -1103,14 +1263,14 @@ defmodule A2A.JSONTest do
           capabilities: %{streaming: true},
           provider: %{organization: "Org", url: "https://org.example.com"},
           documentation_url: "https://docs.example.com",
-          icon_url: "https://icon.example.com",
-          protocol_version: "0.3"
+          icon_url: "https://icon.example.com"
         )
 
       {:ok, decoded} = JSON.decode_agent_card(encoded)
 
       assert decoded.name == "roundtrip"
       assert decoded.description == "Roundtrip test"
+      # v1.0 wire has no top-level url; URL comes from the preferred interface.
       assert decoded.url == "https://example.com"
       assert decoded.version == "1.0.0"
       assert [%{id: "s1", name: "Skill One", tags: ["tag1"]}] = decoded.skills
@@ -1122,7 +1282,6 @@ defmodule A2A.JSONTest do
       assert decoded.provider == %{organization: "Org", url: "https://org.example.com"}
       assert decoded.documentation_url == "https://docs.example.com"
       assert decoded.icon_url == "https://icon.example.com"
-      assert decoded.protocol_version == "0.3"
     end
   end
 

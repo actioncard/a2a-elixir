@@ -58,7 +58,11 @@ defmodule A2A.PlugTest do
 
       body = json_body(conn)
       assert body["name"] == "echo"
-      assert body["url"] == "http://localhost:4000"
+      refute Map.has_key?(body, "url")
+
+      assert [%{"url" => "http://localhost:4000"} | _] =
+               body["supportedInterfaces"]
+
       assert is_list(body["skills"])
     end
 
@@ -111,7 +115,7 @@ defmodule A2A.PlugTest do
         |> A2A.Plug.call(opts)
 
       assert conn.status == 200
-      assert json_body(conn)["result"]["task"]["kind"] == "task"
+      assert is_binary(json_body(conn)["result"]["task"]["id"])
     end
   end
 
@@ -128,7 +132,7 @@ defmodule A2A.PlugTest do
       body = json_body(conn)
       assert body["jsonrpc"] == "2.0"
       assert body["id"] == 1
-      assert body["result"]["task"]["kind"] == "task"
+      assert is_binary(body["result"]["task"]["id"])
       assert body["result"]["task"]["status"]["state"] == "TASK_STATE_COMPLETED"
     end
 
@@ -147,7 +151,7 @@ defmodule A2A.PlugTest do
         |> A2A.Plug.call(plug_opts(agent))
 
       body = json_body(conn)
-      assert body["result"]["task"]["kind"] == "task"
+      assert is_binary(body["result"]["task"]["id"])
       assert body["result"]["task"]["status"]["state"] == "TASK_STATE_COMPLETED"
     end
 
@@ -387,7 +391,10 @@ defmodule A2A.PlugTest do
         |> A2A.Plug.call(plug_opts(agent))
 
       assert conn.status == 200
-      assert json_body(conn)["url"] == "https://tenant.example.com/a2a"
+      refute Map.has_key?(json_body(conn), "url")
+
+      assert [%{"url" => "https://tenant.example.com/a2a"} | _] =
+               json_body(conn)["supportedInterfaces"]
     end
 
     test "get_base_url/1 returns stored value" do
@@ -503,7 +510,7 @@ defmodule A2A.PlugTest do
         |> A2A.Plug.call(opts)
 
       assert conn.status == 200
-      assert json_body(conn)["result"]["task"]["kind"] == "task"
+      assert is_binary(json_body(conn)["result"]["task"]["id"])
     end
   end
 
@@ -527,7 +534,7 @@ defmodule A2A.PlugTest do
         |> A2A.Plug.call(opts)
 
       assert conn.status == 200
-      assert json_body(conn)["result"]["task"]["kind"] == "task"
+      assert is_binary(json_body(conn)["result"]["task"]["id"])
     end
   end
 

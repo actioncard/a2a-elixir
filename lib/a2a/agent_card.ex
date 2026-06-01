@@ -53,7 +53,8 @@ defmodule A2A.AgentCard do
           protocol_version: String.t() | nil,
           supported_interfaces: [supported_interface()],
           security_schemes: %{String.t() => A2A.SecurityScheme.t()},
-          security: [%{String.t() => [String.t()]}]
+          security: [%{String.t() => [String.t()]}],
+          signatures: [map()]
         }
 
   @enforce_keys [:name, :description, :url, :version, :skills]
@@ -72,6 +73,7 @@ defmodule A2A.AgentCard do
     default_output_modes: ["text/plain"],
     supported_interfaces: [],
     security_schemes: %{},
-    security: []
+    security: [],
+    signatures: []
   ]
 end
