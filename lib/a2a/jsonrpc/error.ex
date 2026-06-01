@@ -2,8 +2,8 @@ defmodule A2A.JSONRPC.Error do
   @moduledoc """
   JSON-RPC 2.0 error with A2A-specific error codes.
 
-  Provides a struct and named constructors for the 12 error codes defined by
-  the A2A protocol (5 standard JSON-RPC + 7 A2A-specific).
+  Provides a struct and named constructors for the 14 error codes defined by
+  the A2A protocol (5 standard JSON-RPC + 9 A2A-specific).
 
   ## Example
 
@@ -115,6 +115,26 @@ defmodule A2A.JSONRPC.Error do
     %__MODULE__{
       code: -32_007,
       message: "Authenticated Extended Card is not configured",
+      data: data
+    }
+  end
+
+  @doc "Builds an extension support required error (-32008)."
+  @spec extension_support_required(term()) :: t()
+  def extension_support_required(data \\ nil) do
+    %__MODULE__{
+      code: -32_008,
+      message: "Extension support is required",
+      data: data
+    }
+  end
+
+  @doc "Builds a version not supported error (-32009)."
+  @spec version_not_supported(term()) :: t()
+  def version_not_supported(data \\ nil) do
+    %__MODULE__{
+      code: -32_009,
+      message: "Version not supported",
       data: data
     }
   end
