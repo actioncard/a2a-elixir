@@ -103,7 +103,7 @@ defmodule A2A.ClientTest do
       plug = fn conn ->
         {:ok, body, conn} = Plug.Conn.read_body(conn)
         decoded = Jason.decode!(body)
-        assert decoded["method"] == "message/send"
+        assert decoded["method"] == "SendMessage"
         assert decoded["params"]["message"]["role"] == "ROLE_USER"
 
         json_resp(conn, 200, jsonrpc_success(%{"task" => @task_json}))
@@ -211,7 +211,7 @@ defmodule A2A.ClientTest do
       plug = fn conn ->
         {:ok, body, conn} = Plug.Conn.read_body(conn)
         decoded = Jason.decode!(body)
-        assert decoded["method"] == "tasks/get"
+        assert decoded["method"] == "GetTask"
         assert decoded["params"]["id"] == "tsk-123"
 
         json_resp(conn, 200, jsonrpc_success(@task_json))
@@ -244,7 +244,7 @@ defmodule A2A.ClientTest do
       plug = fn conn ->
         {:ok, body, conn} = Plug.Conn.read_body(conn)
         decoded = Jason.decode!(body)
-        assert decoded["method"] == "tasks/cancel"
+        assert decoded["method"] == "CancelTask"
         assert decoded["params"]["id"] == "tsk-123"
 
         json_resp(conn, 200, jsonrpc_success(canceled_json))
@@ -338,6 +338,31 @@ defmodule A2A.ClientTest do
           {:ok, conn} = Plug.Conn.chunk(conn, data)
           conn
       end
+    end
+  end
+
+  # -------------------------------------------------------------------
+  # End-to-end (Client + Plug)
+  # -------------------------------------------------------------------
+
+  describe "Client <-> Plug round-trip" do
+    test "send_message reaches the in-process server using v1.0 method names" do
+      agent = start_supervised!({A2A.Test.EchoAgent, name: nil})
+
+      plug_opts = A2A.Plug.init(agent: agent, base_url: "http://localhost")
+
+      plug = fn conn ->
+        # Force the test conn through the body parser so it looks like a real
+        # POST. Plug.Test conns ship the body in :params already.
+        conn
+        |> Plug.Conn.put_req_header("content-type", "application/json")
+        |> A2A.Plug.call(plug_opts)
+      end
+
+      client = Client.new("http://localhost", plug: plug)
+
+      assert {:ok, %A2A.Task{} = task} = Client.send_message(client, "hello")
+      assert task.status.state == :completed
     end
   end
 

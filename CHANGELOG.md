@@ -24,6 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `TaskStatus.timestamp` is now serialized with a `Z` suffix (UTC) per the
   v1.0 schema timestamp regex.
+- `A2A.Client` now sends v1.0 PascalCase JSON-RPC method names
+  (`SendMessage`, `SendStreamingMessage`, `GetTask`, `CancelTask`). The
+  server continues to accept both v1.0 PascalCase and the legacy v0.3
+  slash-style names. Pointing the client at a strict v0.3-only server that
+  doesn't accept PascalCase is a breaking change.
 
 ## [0.2.0] - 2026-03-06
 
