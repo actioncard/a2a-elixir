@@ -128,7 +128,7 @@ if Code.ensure_loaded?(Req) do
     end
 
     @doc """
-    Sends a message to an agent via `message/send`.
+    Sends a message to an agent via `SendMessage`.
 
     Returns `{:ok, task}` on success or `{:error, reason}` on failure.
     The message can be a string, an `%A2A.Message{}`, or a list of parts.
@@ -152,7 +152,7 @@ if Code.ensure_loaded?(Req) do
     def send_message(target, message, opts \\ []) do
       client = ensure_client(target)
       {params, req_opts} = build_send_params(message, opts)
-      body = jsonrpc_request("message/send", params)
+      body = jsonrpc_request("SendMessage", params)
 
       case post(client, body, req_opts) do
         {:ok, response} -> decode_jsonrpc_result(response, :task)
@@ -163,7 +163,7 @@ if Code.ensure_loaded?(Req) do
     @doc """
     Sends a message and returns a stream of decoded SSE events.
 
-    Uses `message/stream` to receive server-sent events. Returns
+    Uses `SendStreamingMessage` to receive server-sent events. Returns
     `{:ok, stream}` where the stream yields decoded structs
     (`%A2A.Task{}`, `%A2A.Event.StatusUpdate{}`, `%A2A.Event.ArtifactUpdate{}`,
     or `%A2A.Message{}`).
@@ -185,7 +185,7 @@ if Code.ensure_loaded?(Req) do
     def stream_message(target, message, opts \\ []) do
       client = ensure_client(target)
       {params, req_opts} = build_send_params(message, opts)
-      body = jsonrpc_request("message/stream", params)
+      body = jsonrpc_request("SendStreamingMessage", params)
 
       json_body = Jason.encode!(body)
       req = merge_req_opts(client.req, req_opts)
@@ -208,7 +208,7 @@ if Code.ensure_loaded?(Req) do
     end
 
     @doc """
-    Retrieves a task by ID via `tasks/get`.
+    Retrieves a task by ID via `GetTask`.
 
     ## Options
 
@@ -230,7 +230,7 @@ if Code.ensure_loaded?(Req) do
         %{"id" => task_id}
         |> put_opt("historyLength", opts[:history_length])
 
-      body = jsonrpc_request("tasks/get", params)
+      body = jsonrpc_request("GetTask", params)
 
       case post(client, body, req_opts) do
         {:ok, response} -> decode_jsonrpc_result(response, :task)
@@ -239,7 +239,7 @@ if Code.ensure_loaded?(Req) do
     end
 
     @doc """
-    Cancels a task by ID via `tasks/cancel`.
+    Cancels a task by ID via `CancelTask`.
 
     ## Options
 
@@ -256,7 +256,7 @@ if Code.ensure_loaded?(Req) do
       client = ensure_client(target)
       req_opts = take_req_opts(opts)
       params = %{"id" => task_id}
-      body = jsonrpc_request("tasks/cancel", params)
+      body = jsonrpc_request("CancelTask", params)
 
       case post(client, body, req_opts) do
         {:ok, response} -> decode_jsonrpc_result(response, :task)
