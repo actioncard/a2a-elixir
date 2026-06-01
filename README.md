@@ -25,6 +25,7 @@ A2A gives you behaviour-based agents that run as GenServer processes. Define an 
 - **Agent registry** — `A2A.Registry` for skill-based agent discovery
 - **Supervision** — `A2A.AgentSupervisor` starts a fleet of agents with one call
 - **Pluggable storage** — `A2A.TaskStore` behaviour with built-in ETS implementation
+- **Protocol extensions** — A2A v1.0 `A2A-Extensions` header negotiation; ship your own `A2A.Extension` modules or use the bundled `A2A.Extension.Timestamp`
 - **Telemetry** — `:telemetry` spans and events for calls, messages, cancels, and state transitions
 
 ## Quick Start
@@ -177,6 +178,7 @@ The [`examples/`](https://github.com/actioncard/a2a-elixir/tree/main/examples) d
 - **[`demo.exs`](https://github.com/actioncard/a2a-elixir/blob/main/examples/demo.exs)** — local agents: simple call, multi-turn, and streaming
 - **[`client_server.exs`](https://github.com/actioncard/a2a-elixir/blob/main/examples/client_server.exs)** — full HTTP client/server with Bandit and `A2A.Client`
 - **[`supervisor_demo.exs`](https://github.com/actioncard/a2a-elixir/blob/main/examples/supervisor_demo.exs)** — `A2A.AgentSupervisor`, registry, and skill-based routing
+- **[`extensions.exs`](https://github.com/actioncard/a2a-elixir/blob/main/examples/extensions.exs)** — `A2A-Extensions` header negotiation end-to-end using `A2A.Extension.Timestamp`
 
 Run any example with:
 

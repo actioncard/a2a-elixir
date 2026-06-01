@@ -19,6 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   clients keep working.
 - `Message.reference_task_ids`, `Artifact.extensions`, and
   `AgentCard.signatures` struct fields for v1.0 data carriage.
+- A2A v1.0 extension mechanism: `A2A.Extension` behaviour with
+  `declaration/1`, `activate/3`, `handle_request/3`, and
+  `handle_response/3` callbacks; `A2A.AgentExtension` struct for
+  declarations; `A2A-Extensions` header negotiation in `A2A.Plug` and
+  `A2A.Client`; merge of declared extensions into the agent card's
+  `capabilities.extensions`; `context.extensions` map for agents to read
+  per-request activations; `A2A.Extension.Timestamp` as a reference
+  implementation.
 
 ### Changed
 
