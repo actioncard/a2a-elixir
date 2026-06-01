@@ -17,12 +17,18 @@ defmodule A2A.Agent.Runtime do
 
   Creates a new task, transitions through states, and calls `handle_message/2`.
   """
-  @spec process_message(module(), Message.t(), String.t() | nil, State.t(), map()) ::
-          {Task.t(), State.t()}
-  def process_message(module, message, context_id, state, metadata \\ %{}) do
+  @spec process_message(
+          module(),
+          Message.t(),
+          String.t() | nil,
+          State.t(),
+          map(),
+          map()
+        ) :: {Task.t(), State.t()}
+  def process_message(module, message, context_id, state, metadata \\ %{}, extensions \\ %{}) do
     task = Task.new(context_id: context_id, metadata: metadata)
     task = %{task | history: [message]}
-    run_task(module, message, task, state)
+    run_task(module, message, task, state, extensions)
   end
 
   @doc """
@@ -31,15 +37,15 @@ defmodule A2A.Agent.Runtime do
   Appends the message to the task's history and re-runs `handle_message/2`.
   Valid for any non-terminal task state.
   """
-  @spec continue_task(module(), Message.t(), Task.t(), State.t()) ::
+  @spec continue_task(module(), Message.t(), Task.t(), State.t(), map()) ::
           {:ok, {Task.t(), State.t()}} | {:error, :not_continuable}
-  def continue_task(module, message, task, state) do
+  def continue_task(module, message, task, state, extensions \\ %{}) do
     if Task.terminal?(task) do
       {:error, :not_continuable}
     else
       task = %{task | history: task.history ++ [message]}
       task = %{task | metadata: Map.delete(task.metadata, :stream)}
-      {:ok, run_task(module, message, task, state)}
+      {:ok, run_task(module, message, task, state, extensions)}
     end
   end
 
@@ -60,14 +66,15 @@ defmodule A2A.Agent.Runtime do
     )
   end
 
-  defp run_task(module, message, task, state) do
+  defp run_task(module, message, task, state, extensions) do
     task = State.transition(task, :working)
 
     context = %{
       task_id: task.id,
       context_id: task.context_id,
       history: task.history,
-      metadata: task.metadata
+      metadata: task.metadata,
+      extensions: extensions
     }
 
     meta = %{agent: module, task_id: task.id, context_id: task.context_id}

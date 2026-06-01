@@ -24,7 +24,8 @@ defmodule A2A.AgentCard do
           optional(:streaming) => boolean(),
           optional(:push_notifications) => boolean(),
           optional(:state_transition_history) => boolean(),
-          optional(:extended_agent_card) => boolean()
+          optional(:extended_agent_card) => boolean(),
+          optional(:extensions) => [A2A.AgentExtension.t()]
         }
 
   @type provider :: %{

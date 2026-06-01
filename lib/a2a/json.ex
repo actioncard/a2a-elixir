@@ -561,12 +561,24 @@ defmodule A2A.JSON do
   end
 
   defp encode_capabilities(caps) when is_map(caps) do
-    encode_known_keys(caps, [
+    caps
+    |> encode_known_keys([
       {"streaming", :streaming},
       {"pushNotifications", :push_notifications},
       {"stateTransitionHistory", :state_transition_history},
       {"extendedAgentCard", :extended_agent_card}
     ])
+    |> put_unless_empty("extensions", encode_agent_extensions(Map.get(caps, :extensions, [])))
+  end
+
+  defp encode_agent_extensions(extensions) when is_list(extensions) do
+    Enum.map(extensions, &encode_agent_extension/1)
+  end
+
+  defp encode_agent_extension(%A2A.AgentExtension{} = ext) do
+    %{"uri" => ext.uri, "required" => ext.required}
+    |> put_unless_nil("description", ext.description)
+    |> put_unless_nil("params", ext.params)
   end
 
   defp encode_interfaces(interfaces) when is_list(interfaces) do
@@ -804,12 +816,30 @@ defmodule A2A.JSON do
   defp decode_card_capabilities(nil), do: %{}
 
   defp decode_card_capabilities(map) when is_map(map) do
-    decode_known_keys(map, [
-      {"streaming", :streaming},
-      {"pushNotifications", :push_notifications},
-      {"stateTransitionHistory", :state_transition_history},
-      {"extendedAgentCard", :extended_agent_card}
-    ])
+    base =
+      decode_known_keys(map, [
+        {"streaming", :streaming},
+        {"pushNotifications", :push_notifications},
+        {"stateTransitionHistory", :state_transition_history},
+        {"extendedAgentCard", :extended_agent_card}
+      ])
+
+    case Map.get(map, "extensions") do
+      list when is_list(list) and list != [] ->
+        Map.put(base, :extensions, Enum.map(list, &decode_agent_extension/1))
+
+      _ ->
+        base
+    end
+  end
+
+  defp decode_agent_extension(map) when is_map(map) do
+    %A2A.AgentExtension{
+      uri: Map.fetch!(map, "uri"),
+      description: Map.get(map, "description"),
+      required: Map.get(map, "required", false),
+      params: Map.get(map, "params")
+    }
   end
 
   defp decode_card_interfaces(interfaces) when is_list(interfaces) do

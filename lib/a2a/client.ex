@@ -37,6 +37,14 @@ if Code.ensure_loaded?(Req) do
     - `:metadata` — arbitrary metadata map
     - `:headers` — additional HTTP headers
     - `:timeout` — HTTP request timeout in ms
+
+    ## Extensions
+
+    Pass `:extensions` to `new/2` to declare A2A protocol extensions this
+    client supports. Their declared URIs are sent in the `A2A-Extensions`
+    request header on every call. Use `parse_extensions_header/1` and
+    `activated/2` on the resulting `Req.Response` to find out which
+    extensions the server activated.
     """
 
     alias A2A.JSONRPC.Error
@@ -45,10 +53,11 @@ if Code.ensure_loaded?(Req) do
 
     @type t :: %__MODULE__{
             url: String.t(),
-            req: Req.Request.t()
+            req: Req.Request.t(),
+            extensions: [A2A.Extension.compiled()]
           }
 
-    defstruct [:url, :req]
+    defstruct [:url, :req, extensions: []]
 
     @doc """
     Creates a new client struct.
@@ -69,18 +78,30 @@ if Code.ensure_loaded?(Req) do
     end
 
     def new(url, opts) when is_binary(url) do
+      {ext_entries, opts} = Keyword.pop(opts, :extensions, [])
+      compiled = A2A.Extension.compile(ext_entries)
+      ext_uris = A2A.Extension.declared_uris(compiled)
+
       {req_opts, _rest} =
         Keyword.split(opts, [:headers, :connect_options, :retry, :plug])
+
+      base_headers = [{"content-type", "application/json"}]
+
+      base_headers =
+        case ext_uris do
+          [] -> base_headers
+          uris -> [{"a2a-extensions", Enum.join(uris, ", ")} | base_headers]
+        end
 
       req =
         Req.new(
           Keyword.merge(
-            [base_url: url, headers: [{"content-type", "application/json"}]],
+            [base_url: url, headers: base_headers],
             req_opts
           )
         )
 
-      %__MODULE__{url: url, req: req}
+      %__MODULE__{url: url, req: req, extensions: compiled}
     end
 
     @doc """
@@ -236,6 +257,37 @@ if Code.ensure_loaded?(Req) do
         {:ok, response} -> decode_jsonrpc_result(response, :task)
         {:error, _} = error -> error
       end
+    end
+
+    @doc """
+    Parses the `A2A-Extensions` header from a `Req.Response`. Returns the
+    list of extension URIs the server activated for the corresponding
+    request, or `[]` if the header is absent.
+
+    HTTP headers may appear as a single comma-separated value or as
+    multiple repeated headers; both are handled.
+    """
+    @spec parse_extensions_header(Req.Response.t()) :: [String.t()]
+    def parse_extensions_header(%Req.Response{headers: headers}) do
+      headers
+      |> Map.get("a2a-extensions", [])
+      |> List.wrap()
+      |> Enum.flat_map(&String.split(&1, ","))
+      |> Enum.map(&String.trim/1)
+      |> Enum.reject(&(&1 == ""))
+    end
+
+    @doc """
+    Returns the configured extension modules whose URI appears in the
+    server's `A2A-Extensions` response header.
+    """
+    @spec activated(t(), Req.Response.t()) :: [module()]
+    def activated(%__MODULE__{extensions: compiled}, response) do
+      activated = MapSet.new(parse_extensions_header(response))
+
+      for {mod, _state, %A2A.AgentExtension{uri: uri}} <- compiled,
+          MapSet.member?(activated, uri),
+          do: mod
     end
 
     @doc """
