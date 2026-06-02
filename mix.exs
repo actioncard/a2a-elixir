@@ -43,6 +43,7 @@ defmodule A2A.MixProject do
       {:plug, "~> 1.16", optional: true},
       {:req, "~> 0.5", optional: true},
       {:bandit, "~> 1.5", optional: true},
+      {:grpcbox, "~> 0.16", optional: true},
 
       # Dev/test
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},

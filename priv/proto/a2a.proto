@@ -1,0 +1,174 @@
+syntax = "proto3";
+
+package a2a.v1;
+
+service A2AService {
+  // Send a message and receive a task
+  rpc SendMessage(SendMessageRequest) returns (SendMessageResponse);
+  
+  // Get task status
+  rpc GetTask(GetTaskRequest) returns (GetTaskResponse);
+  
+  // Cancel a task
+  rpc CancelTask(CancelTaskRequest) returns (CancelTaskResponse);
+  
+  // List tasks
+  rpc ListTasks(ListTasksRequest) returns (ListTasksResponse);
+  
+  // Stream messages (server-side streaming)
+  rpc StreamMessage(StreamMessageRequest) returns (stream StreamMessageResponse);
+  
+  // Get agent card
+  rpc GetAgentCard(GetAgentCardRequest) returns (GetAgentCardResponse);
+}
+
+// Enum definitions following A2A v1.0 wire format
+enum Role {
+  ROLE_UNSPECIFIED = 0;
+  ROLE_USER = 1;
+  ROLE_ASSISTANT = 2;  // Maps to :agent internally
+  ROLE_TOOL = 3;
+}
+
+enum TaskState {
+  TASK_STATE_UNSPECIFIED = 0;
+  TASK_STATE_SUBMITTED = 1;
+  TASK_STATE_ACTIVE = 2;      // Maps to :working internally
+  TASK_STATE_COMPLETED = 3;
+  TASK_STATE_FAILED = 4;
+  TASK_STATE_CANCELLED = 5;   // Maps to :canceled internally
+  TASK_STATE_INPUT_REQUIRED = 6;
+  TASK_STATE_REJECTED = 7;
+  TASK_STATE_AUTH_REQUIRED = 8;
+  TASK_STATE_UNKNOWN = 9;
+}
+
+// Message part types
+message TextPart {
+  string text = 1;
+  map<string, string> metadata = 2;
+}
+
+message FilePart {
+  oneof content {
+    bytes data = 1;
+    string url = 2;
+  }
+  string media_type = 3;
+  string filename = 4;
+  map<string, string> metadata = 5;
+}
+
+message Part {
+  oneof part {
+    TextPart text = 1;
+    FilePart file = 2;
+  }
+}
+
+// Message definition
+message Message {
+  string message_id = 1;
+  Role role = 2;
+  repeated Part parts = 3;
+  string task_id = 4;
+  string context_id = 5;
+  repeated string reference_task_ids = 6;
+  map<string, string> metadata = 7;
+  map<string, string> extensions = 8;
+}
+
+// Task status definition
+message TaskStatus {
+  TaskState state = 1;
+  Message message = 2;
+  string timestamp = 3;  // RFC3339 format
+}
+
+// Artifact definition
+message Artifact {
+  string artifact_id = 1;
+  string media_type = 2;
+  oneof content {
+    bytes data = 3;
+    string url = 4;
+  }
+  string filename = 5;
+  map<string, string> metadata = 6;
+}
+
+// Task definition
+message Task {
+  string id = 1;
+  string context_id = 2;
+  TaskStatus status = 3;
+  repeated Message history = 4;
+  repeated Artifact artifacts = 5;
+  map<string, string> metadata = 6;
+}
+
+// Request/Response messages
+
+message SendMessageRequest {
+  Message message = 1;
+  string id = 2;                    // Optional task ID
+  string context_id = 3;            // Optional context ID
+  map<string, string> metadata = 4;
+}
+
+message SendMessageResponse {
+  Task task = 1;
+}
+
+message GetTaskRequest {
+  string id = 1;
+  int32 history_length = 2;
+}
+
+message GetTaskResponse {
+  Task task = 1;
+}
+
+message CancelTaskRequest {
+  string id = 1;
+}
+
+message CancelTaskResponse {
+  Task task = 1;
+}
+
+message ListTasksRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+  map<string, string> metadata = 3;
+}
+
+message ListTasksResponse {
+  repeated Task tasks = 1;
+  int32 total_size = 2;
+  int32 page_size = 3;
+  string next_page_token = 4;
+}
+
+message StreamMessageRequest {
+  Message message = 1;
+  string id = 2;
+  string context_id = 3;
+  map<string, string> metadata = 4;
+}
+
+message StreamMessageResponse {
+  oneof event {
+    Task task = 1;
+    Message message = 2;
+    string error = 3;
+  }
+}
+
+message GetAgentCardRequest {
+  // Empty for now
+}
+
+message GetAgentCardResponse {
+  string card_json = 1;  // JSON-encoded agent card
+}

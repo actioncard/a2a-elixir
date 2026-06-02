@@ -259,7 +259,7 @@ defmodule A2A.JSON do
   - `:signatures` — list of JWS signature maps (each `%{"protected" => ...,
     "signature" => ..., "header" => ...}`)
   """
-  @spec encode_agent_card(A2A.Agent.card(), keyword()) :: map()
+  @spec encode_agent_card(A2A.AgentCard.t(), keyword()) :: map()
   def encode_agent_card(card, opts \\ []) do
     url = Keyword.fetch!(opts, :url)
     capabilities = Keyword.get(opts, :capabilities, %{})
