@@ -1,0 +1,223 @@
+#!/usr/bin/env bash
+#
+# Self-cleaning launcher for the ad-hoc ITK Elixir server used during local
+# curl verification by agents/subagents.
+#
+# WHY THIS EXISTS
+#   Subagents used to start the ITK server with a raw `mix run test/itk/server.exs &`
+#   so they could curl against it. When a subagent's session is killed (hard SIGKILL,
+#   not a clean exit) the backgrounded BEAM (`beam.smp`) detaches and survives,
+#   holding the port — an orphan. `trap EXIT` does NOT fire on SIGKILL, so the
+#   trap-based cleanup that bin/tck uses is not enough for ad-hoc backgrounded use.
+#
+# HOW THIS FIXES IT (defense in depth)
+#   1. PID file per port  -> any later `start`/`stop`/`reap` can find & kill a stale server.
+#   2. Port pre-flight    -> `start` kills any existing listener on the port first (idempotent).
+#   3. Watchdog w/ parent-death detection -> a detached poller watches the launching
+#      shell's PID; when that parent dies (subagent session killed), the watchdog
+#      kills the BEAM. This is what survives a hard SIGKILL of the subagent.
+#   4. Process group kill -> we kill the whole PGID so epmd-spawned children die too.
+#
+# USAGE
+#   bin/itk-server start [PORT]     # start server (default port 10110), prints when ready
+#   bin/itk-server stop  [PORT]     # stop the server for PORT (or all if no port given)
+#   bin/itk-server status [PORT]    # show running ITK servers
+#   bin/itk-server reap             # kill ALL orphaned itk/beam servers we can find
+#
+# The server is launched with MIX_ENV=test (required: test/support modules are only
+# on elixirc_paths in :test — see mix.exs).
+#
+set -uo pipefail
+
+DEFAULT_PORT=10110
+RUN_DIR="${TMPDIR:-/tmp}/a2a-itk-server"
+mkdir -p "$RUN_DIR"
+
+pidfile_for() { echo "$RUN_DIR/itk-$1.pid"; }
+wdfile_for()  { echo "$RUN_DIR/itk-$1.watchdog"; }
+logfile_for() { echo "$RUN_DIR/itk-$1.log"; }
+
+# Kill a PID and its whole process group, escalating to KILL if needed.
+kill_tree() {
+  local pid="$1"
+  [ -z "$pid" ] && return 0
+  kill -0 "$pid" 2>/dev/null || return 0
+  # negative pid = process group
+  local pgid
+  pgid=$(ps -o pgid= "$pid" 2>/dev/null | tr -d ' ')
+  kill -TERM "$pid" 2>/dev/null || true
+  [ -n "$pgid" ] && kill -TERM "-$pgid" 2>/dev/null || true
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    kill -0 "$pid" 2>/dev/null || return 0
+    sleep 0.3
+  done
+  kill -KILL "$pid" 2>/dev/null || true
+  [ -n "$pgid" ] && kill -KILL "-$pgid" 2>/dev/null || true
+}
+
+# Kill whatever is listening on a TCP port (BEAM or otherwise).
+kill_port_listener() {
+  local port="$1" pids
+  pids=$(ss -ltnpH "sport = :$port" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | sort -u)
+  [ -z "$pids" ] && return 0
+  for p in $pids; do kill_tree "$p"; done
+}
+
+stop_one() {
+  local port="$1"
+  local pf wf
+  pf="$(pidfile_for "$port")"; wf="$(wdfile_for "$port")"
+  # stop watchdog first so it doesn't fight us
+  [ -f "$wf" ] && kill_tree "$(cat "$wf" 2>/dev/null)" && rm -f "$wf"
+  [ -f "$pf" ] && kill_tree "$(cat "$pf" 2>/dev/null)" && rm -f "$pf"
+  # belt & suspenders: anything still on the port
+  kill_port_listener "$port"
+  echo "Stopped ITK server on port $port."
+}
+
+case "${1:-}" in
+  start)
+    PORT="${2:-$DEFAULT_PORT}"
+    PF="$(pidfile_for "$PORT")"; WF="$(wdfile_for "$PORT")"; LF="$(logfile_for "$PORT")"
+    SUT_URL="http://localhost:${PORT}/jsonrpc"
+
+    # --- pre-flight: clear any stale server / listener on this port (idempotent) ---
+    stop_one "$PORT" >/dev/null 2>&1 || true
+
+    # --- start the BEAM in its own session/process group so we can group-kill it ---
+    echo "Starting ITK server on port $PORT (log: $LF)..."
+    setsid env MIX_ENV=test mix run test/itk/server.exs --httpPort "$PORT" \
+      >"$LF" 2>&1 &
+    SERVER_PID=$!
+    echo "$SERVER_PID" >"$PF"
+
+    # --- watchdog: kill the BEAM when the owning agent SESSION dies ---
+    # Each terminal() call runs in a transient shell, so $PPID (that shell) is not a
+    # durable anchor. The durable anchor is the nearest `hermes` ancestor process:
+    # for a SUBAGENT that is the subagent's worker process, which is killed (as a
+    # process group) when the subagent session ends — exactly the orphan trigger.
+    # For the main agent it's the long-lived hermes, so the watchdog simply persists
+    # until an explicit `stop`/`reap` (still safe; pre-flight + reap cover that case).
+    # Walk up the ppid chain to find the first process named "hermes".
+    find_session_anchor() {
+      local pid="$PPID" comm
+      for _ in 1 2 3 4 5 6 7 8; do
+        [ -z "$pid" ] && break
+        [ "$pid" = 1 ] && break
+        comm=$(ps -o comm= -p "$pid" 2>/dev/null | tr -d ' ')
+        if [ "$comm" = "hermes" ]; then echo "$pid"; return 0; fi
+        pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
+      done
+      # fallback: the launching shell's parent (best effort)
+      ps -o ppid= -p "$PPID" 2>/dev/null | tr -d ' '
+    }
+    PARENT_PID="$(find_session_anchor)"
+    setsid bash -c '
+      server_pid="'"$SERVER_PID"'"
+      parent_pid="'"$PARENT_PID"'"
+      pf="'"$PF"'"
+      kill_tree() {
+        local pid="$1"; [ -z "$pid" ] && return 0
+        kill -0 "$pid" 2>/dev/null || return 0
+        local pgid; pgid=$(ps -o pgid= "$pid" 2>/dev/null | tr -d " ")
+        kill -TERM "$pid" 2>/dev/null || true
+        [ -n "$pgid" ] && kill -TERM "-$pgid" 2>/dev/null || true
+        sleep 2
+        kill -KILL "$pid" 2>/dev/null || true
+        [ -n "$pgid" ] && kill -KILL "-$pgid" 2>/dev/null || true
+      }
+      while true; do
+        # stop if the server is already gone
+        kill -0 "$server_pid" 2>/dev/null || { rm -f "$pf"; exit 0; }
+        # stop (and reap) if the launching shell has died
+        if ! kill -0 "$parent_pid" 2>/dev/null; then
+          kill_tree "$server_pid"
+          rm -f "$pf"
+          exit 0
+        fi
+        sleep 2
+      done
+    ' >/dev/null 2>&1 &
+    echo "$!" >"$WF"
+
+    # --- poll until the agent card responds ---
+    for i in $(seq 1 30); do
+      if curl -sf "${SUT_URL}/.well-known/agent-card.json" >/dev/null 2>&1; then
+        echo "Server ready at ${SUT_URL} (pid $SERVER_PID, watchdog $(cat "$WF"))."
+        exit 0
+      fi
+      if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+        echo "ERROR: server process died during startup. Last log lines:"
+        tail -n 20 "$LF" 2>/dev/null
+        stop_one "$PORT" >/dev/null 2>&1
+        exit 1
+      fi
+      sleep 1
+    done
+    echo "ERROR: server did not become ready within 30s. Last log lines:"
+    tail -n 20 "$LF" 2>/dev/null
+    stop_one "$PORT" >/dev/null 2>&1
+    exit 1
+    ;;
+
+  stop)
+    if [ -n "${2:-}" ]; then
+      stop_one "$2"
+    else
+      shopt -s nullglob
+      found=0
+      for pf in "$RUN_DIR"/itk-*.pid; do
+        found=1
+        port=$(basename "$pf" .pid); port="${port#itk-}"
+        stop_one "$port"
+      done
+      [ "$found" = 0 ] && echo "No tracked ITK servers."
+    fi
+    ;;
+
+  status)
+    shopt -s nullglob
+    any=0
+    for pf in "$RUN_DIR"/itk-*.pid; do
+      port=$(basename "$pf" .pid); port="${port#itk-}"
+      pid=$(cat "$pf" 2>/dev/null)
+      if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+        echo "ITK server RUNNING: port=$port pid=$pid"
+        any=1
+      else
+        echo "ITK server STALE pidfile (process gone): port=$port -> removing"
+        rm -f "$pf" "$(wdfile_for "$port")"
+      fi
+    done
+    # also report any untracked beam listening on dev ports
+    untracked=$(ss -ltnpH 2>/dev/null | grep -i beam || true)
+    if [ -n "$untracked" ]; then
+      echo "--- untracked BEAM listeners (consider 'bin/itk-server reap') ---"
+      echo "$untracked"
+      any=1
+    fi
+    [ "$any" = 0 ] && echo "No ITK servers running."
+    ;;
+
+  reap)
+    echo "Reaping all tracked + orphaned ITK/BEAM servers..."
+    # tracked
+    shopt -s nullglob
+    for pf in "$RUN_DIR"/itk-*.pid; do
+      port=$(basename "$pf" .pid); port="${port#itk-}"
+      stop_one "$port"
+    done
+    # orphaned: any beam.smp whose command line mentions our server script
+    pids=$(pgrep -f "itk/server.exs" 2>/dev/null || true)
+    for p in $pids; do
+      echo "Killing orphaned ITK beam pid=$p"
+      kill_tree "$p"
+    done
+    echo "Reap complete."
+    ;;
+
+  *)
+    echo "Usage: bin/itk-server {start [PORT]|stop [PORT]|status|reap}" >&2
+    exit 2
+    ;;
+esac
