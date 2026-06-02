@@ -91,7 +91,10 @@ defmodule A2A.Test.ITK.InstructionTest do
               assert {:ok, _inst} = Instruction.decode(raw)
             end
 
-            assert_fixture("return_response.bin", {:return_response, "traversal-completed:jsonrpc"})
+            assert_fixture(
+              "return_response.bin",
+              {:return_response, "traversal-completed:jsonrpc"}
+            )
 
             assert_fixture(
               "steps_concat.bin",

@@ -201,12 +201,12 @@ defmodule A2A.Test.ITK.Router do
   end
 
   # Card at both the /jsonrpc-mounted path and the bare well-known path.
-  get "/jsonrpc/.well-known/agent-card.json", do: send_card(conn)
-  get "/.well-known/agent-card.json", do: send_card(conn)
+  get("/jsonrpc/.well-known/agent-card.json", do: send_card(conn))
+  get("/.well-known/agent-card.json", do: send_card(conn))
 
   # JSON-RPC endpoint. Plug normalizes the trailing slash, so a single route
   # matches both /jsonrpc and /jsonrpc/.
-  post "/jsonrpc", do: handle_rpc(conn)
+  post("/jsonrpc", do: handle_rpc(conn))
 
   match _ do
     send_resp(conn, 404, "not found")
