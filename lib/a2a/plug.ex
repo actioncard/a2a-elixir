@@ -44,6 +44,13 @@ if Code.ensure_loaded?(Plug) do
       `A2A-Extensions` response header to the URIs that were activated.
       Declarations are merged into `capabilities.extensions` on the
       served agent card.
+    - `:versions` — list of supported A2A protocol versions as
+      `Major.Minor` strings (default: `A2A.Version.supported_default/0`,
+      currently `["0.3", "1.0"]`). The client's `A2A-Version` header is
+      normalized to `Major.Minor` and validated against this list;
+      unsupported versions return `VersionNotSupportedError` (-32009).
+      Missing/empty headers are treated as `"0.3"` (spec §3.6.2). The
+      negotiated version is echoed in the `A2A-Version` response header.
 
     ## Per-Request Overrides
 
@@ -130,7 +137,8 @@ if Code.ensure_loaded?(Plug) do
         agent_card_opts: Keyword.get(opts, :agent_card_opts, []),
         metadata: Keyword.get(opts, :metadata, %{}),
         authorize_task: Keyword.get(opts, :authorize_task),
-        extensions: A2A.Extension.compile(Keyword.get(opts, :extensions, []))
+        extensions: A2A.Extension.compile(Keyword.get(opts, :extensions, [])),
+        versions: Keyword.get(opts, :versions, A2A.Version.supported_default())
       }
     end
 
@@ -217,14 +225,26 @@ if Code.ensure_loaded?(Plug) do
     # -- JSON-RPC dispatch -----------------------------------------------------
 
     defp handle_json_rpc(conn, opts) do
+      version = A2A.Version.parse_header(get_req_header(conn, "a2a-version"))
       requested = A2A.Extension.parse_header(get_req_header(conn, "a2a-extensions"))
 
-      with :ok <- A2A.Extension.validate_required(opts.extensions, requested),
+      with :ok <- A2A.Version.validate(version, opts.versions),
+           :ok <- A2A.Extension.validate_required(opts.extensions, requested),
            {:ok, activations, activated_uris} <-
              A2A.Extension.activate(opts.extensions, requested, %{conn: conn}) do
-        conn = put_extensions_response_header(conn, activated_uris)
+        conn =
+          conn
+          |> put_resp_header("a2a-version", version)
+          |> put_extensions_response_header(activated_uris)
+
         dispatch_json_rpc(conn, opts, activations)
       else
+        {:error, rejected} when is_binary(rejected) ->
+          send_json(
+            conn,
+            Response.error(nil, Error.version_not_supported(rejected))
+          )
+
         {:error, missing} when is_list(missing) ->
           send_json(
             conn,

@@ -104,17 +104,17 @@ library only supports JSON-RPC. Full implementation requires:
 
 ### Version & Wire Format Negotiation
 
-Our implementation is hardcoded to A2A v0.3. The spec supports version
-selection and wire format options negotiated via HTTP headers. Would require:
+The server accepts both A2A v0.3 and v1.0 wire formats and method names,
+and the `A2A-Version` header is parsed and validated per spec §3.6
+(unsupported versions return `VersionNotSupportedError` -32009). Still
+outstanding:
 
-- `a2a-version` header parsing and validation on the server — reject
-  unsupported versions with an appropriate error
-- Version-aware encoding/decoding in `A2A.JSON` (field names and structure
-  may differ between spec versions)
+- Per-interface version selection from `supportedInterfaces[]` — agents
+  exposing multiple interfaces at different URLs with different versions
 - Wire format option (`spec_json` vs `proto_json`) controlling field naming
   conventions (camelCase vs snake_case)
-- Client sends version header; server validates compatibility and responds
-  with the negotiated version
+- Query-parameter fallback (`?A2A-Version=…`) — spec §3.6.1 says clients
+  MAY use it instead of the header
 
 ### Task Resubscribe Streaming
 
