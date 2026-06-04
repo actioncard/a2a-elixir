@@ -45,6 +45,13 @@ if Code.ensure_loaded?(Req) do
     request header on every call. Use `parse_extensions_header/1` and
     `activated/2` on the resulting `Req.Response` to find out which
     extensions the server activated.
+
+    ## Protocol version
+
+    Pass `:version` to `new/2` to set the `A2A-Version` request header
+    sent on every call. Defaults to `A2A.Version.default/0` (`"1.0"`).
+    Use `version/1` on a `Req.Response` to read the version the server
+    echoed back.
     """
 
     alias A2A.JSONRPC.Error
@@ -79,13 +86,17 @@ if Code.ensure_loaded?(Req) do
 
     def new(url, opts) when is_binary(url) do
       {ext_entries, opts} = Keyword.pop(opts, :extensions, [])
+      {version, opts} = Keyword.pop(opts, :version, A2A.Version.default())
       compiled = A2A.Extension.compile(ext_entries)
       ext_uris = A2A.Extension.declared_uris(compiled)
 
       {req_opts, _rest} =
         Keyword.split(opts, [:headers, :connect_options, :retry, :plug])
 
-      base_headers = [{"content-type", "application/json"}]
+      base_headers = [
+        {"content-type", "application/json"},
+        {"a2a-version", version}
+      ]
 
       base_headers =
         case ext_uris do
@@ -275,6 +286,20 @@ if Code.ensure_loaded?(Req) do
       |> Enum.flat_map(&String.split(&1, ","))
       |> Enum.map(&String.trim/1)
       |> Enum.reject(&(&1 == ""))
+    end
+
+    @doc """
+    Returns the negotiated A2A protocol version from the server's
+    `A2A-Version` response header, or `nil` if the header is absent.
+    """
+    @spec version(Req.Response.t()) :: String.t() | nil
+    def version(%Req.Response{headers: headers}) do
+      case Map.get(headers, "a2a-version") do
+        nil -> nil
+        [] -> nil
+        [v | _] when is_binary(v) -> v
+        v when is_binary(v) -> v
+      end
     end
 
     @doc """

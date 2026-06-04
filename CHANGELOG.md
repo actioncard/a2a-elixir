@@ -27,6 +27,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `capabilities.extensions`; `context.extensions` map for agents to read
   per-request activations; `A2A.Extension.Timestamp` as a reference
   implementation.
+- A2A v1.0 `A2A-Version` header negotiation: `A2A.Version` helper module;
+  `A2A.Plug` `:versions` option (defaults to `["0.3", "1.0"]`) validates
+  the request header and returns `VersionNotSupportedError` (-32009) for
+  unsupported versions; negotiated version echoed in the response header.
+  `A2A.Client` `:version` option (defaults to `"1.0"`) sets the request
+  header on every call; `A2A.Client.version/1` reads the server's
+  echoed value. Missing/empty headers are interpreted as `"0.3"`
+  (spec §3.6.2) and only `Major.Minor` is significant.
 
 ### Changed
 
