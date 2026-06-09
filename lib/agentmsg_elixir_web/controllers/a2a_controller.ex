@@ -65,14 +65,16 @@ if Code.ensure_loaded?(Plug) and Code.ensure_loaded?(Phoenix.Controller) do
     # Default configuration - override in your app config
     @default_config %{
       jwt_verifier: %{
-        jwks_url: System.get_env("JWT_JWKS_URL", "https://auth.example.com/.well-known/jwks.json"),
+        jwks_url:
+          System.get_env("JWT_JWKS_URL", "https://auth.example.com/.well-known/jwks.json"),
         issuer: System.get_env("JWT_ISSUER", "https://auth.example.com"),
         audience: System.get_env("JWT_AUDIENCE", "a2a-api"),
         required_claims: ["sub", "principal_type"],
         clock_skew: 60,
         cache_ttl: 3600
       },
-      agent_module: nil,  # Must be configured
+      # Must be configured
+      agent_module: nil,
       base_url: System.get_env("A2A_BASE_URL", "http://localhost:4000")
     }
 
@@ -187,10 +189,11 @@ if Code.ensure_loaded?(Plug) and Code.ensure_loaded?(Phoenix.Controller) do
         send_error(conn, 500, "Agent module not configured")
       else
         # Use A2A.Plug for standard JSON-RPC handling with auth
-        plug_opts = A2A.Plug.init(
-          agent: config.agent_module,
-          base_url: config.base_url
-        )
+        plug_opts =
+          A2A.Plug.init(
+            agent: config.agent_module,
+            base_url: config.base_url
+          )
 
         A2A.Plug.call(conn, plug_opts)
       end
@@ -225,10 +228,11 @@ if Code.ensure_loaded?(Plug) and Code.ensure_loaded?(Phoenix.Controller) do
         case verify_task_access(task_id, conn) do
           :ok ->
             # Use A2A.Plug.SSE for streaming
-            sse_opts = SSE.init(
-              task_id: task_id,
-              base_url: config.base_url
-            )
+            sse_opts =
+              SSE.init(
+                task_id: task_id,
+                base_url: config.base_url
+              )
 
             SSE.call(conn, sse_opts)
 
@@ -351,16 +355,16 @@ else
   defmodule AgentmsgElixirWeb.A2AController do
     @moduledoc """
     A2A Controller - requires Phoenix and Plug to be loaded.
-    
+
     Add `{:phoenix, "~> 1.7"}` to your dependencies to use this module.
     """
 
     def __using__(_opts) do
       raise """
       AgentmsgElixirWeb.A2AController requires Phoenix and Plug.
-      
+
       Add to your mix.exs dependencies:
-      
+
         {:phoenix, "~> 1.7"},
         {:plug, "~> 1.16"}
       """
