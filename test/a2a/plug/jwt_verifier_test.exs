@@ -10,7 +10,7 @@ defmodule A2A.Plug.JWTVerifierTest do
 
   # -- Helpers -----------------------------------------------------------------
 
-  defp create_jwt_token(payload, secret \\\\ @test_secret) do
+  defp create_jwt_token(payload, secret \\ @test_secret) do
     header = %{"alg" => "HS256", "typ" => "JWT"}
     header_json = Jason.encode!(header)
     payload_json = Jason.encode!(payload)
