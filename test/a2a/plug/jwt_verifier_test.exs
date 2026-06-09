@@ -281,7 +281,7 @@ defmodule A2A.Plug.JWTVerifierTest do
 
       header_b64 = Base.url_encode64(header_json, padding: false)
       payload_b64 = Base.url_encode64(payload_json, padding: false)
-      
+
       # Use dummy signature since verification will fail on algorithm check
       token = "#{header_b64}.#{payload_b64}.dummy-signature"
 
