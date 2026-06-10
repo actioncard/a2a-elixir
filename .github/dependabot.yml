@@ -4,8 +4,27 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    groups:
+      dev-dependencies:
+        patterns:
+          - "ex_doc"
+          - "credo"
+          - "dialyxir"
+        update-types: ["patch", "minor"]
+      runtime-dependencies:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "ex_doc"
+          - "credo"
+          - "dialyxir"
+        update-types: ["patch", "minor"]
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    groups:
+      actions:
+        patterns:
+          - "*"
