@@ -1,18 +1,18 @@
-if Code.ensure_loaded?(Plug) do
+if Code.ensure_loaded?(Plug) and Code.ensure_loaded?(Joken) do
   defmodule A2A.Plug.JWTVerifier do
     @moduledoc """
     JWT verification utilities for A2A principal authentication.
 
     Provides JWT verification for authenticating principals (users, agents, or
-    services) accessing A2A endpoints. Supports both HMAC and RSA signature verification.
+    services) accessing A2A endpoints. Signature verification is delegated to
+    [Joken](https://hex.pm/packages/joken)/JOSE rather than hand-rolled crypto.
 
     ## Features
 
-    - JWT signature verification (HS256, RS256)
+    - JWT signature verification via Joken (HS256)
     - Standard claims validation (exp, nbf, iat, sub)
     - Issuer and audience verification
     - Configurable claim requirements
-    - Simple JWKS support for RSA keys
 
     ## Usage with HMAC (HS256)
 
@@ -36,14 +36,14 @@ if Code.ensure_loaded?(Plug) do
     ## Configuration Options
 
     - `:secret` — HMAC secret key (for HS256)
-    - `:algorithm` — Signature algorithm: "HS256" or "RS256" (default: "HS256")
+    - `:algorithm` — Signature algorithm: "HS256" (default: "HS256")
     - `:issuer` — Expected issuer claim (optional)
     - `:audience` — Expected audience claim (optional)
     - `:required_claims` — List of claim names that must be present (default: `["sub"]`)
     - `:clock_skew` — Allowed clock skew in seconds (default: 60)
-    """
 
-    import Bitwise
+    This module is only compiled when both `:plug` and `:joken` are available.
+    """
 
     @type verifier :: %{
             secret: String.t() | nil,
@@ -73,94 +73,62 @@ if Code.ensure_loaded?(Plug) do
 
     @doc """
     Verifies a JWT token and returns the claims.
+
+    Signature verification is performed by Joken. Header/algorithm and claim
+    validation are performed here so error reasons stay descriptive.
     """
     @spec verify(verifier(), String.t()) :: {:ok, claim_map()} | {:error, String.t()}
     def verify(config, token) when is_binary(token) do
-      with {:ok, header, payload, signature} <- decode_jwt(token),
-           :ok <- verify_signature(token, signature, header, config),
-           :ok <- validate_claims(payload, config) do
-        {:ok, payload}
-      else
-        {:error, reason} -> {:error, to_string(reason)}
+      with {:ok, header} <- peek_header(token),
+           :ok <- verify_algorithm(header, config),
+           {:ok, signer} <- build_signer(config),
+           {:ok, claims} <- verify_signature(token, signer),
+           :ok <- validate_claims(claims, config) do
+        {:ok, claims}
       end
     end
 
-    # -- Private functions -------------------------------------------------------
+    # -- Signature (delegated to Joken) -----------------------------------------
 
-    defp decode_jwt(token) do
-      case String.split(token, ".") do
-        [header_b64, payload_b64, signature_b64] ->
-          with {:ok, header_json} <- base64_decode(header_b64),
-               {:ok, header} <- Jason.decode(header_json),
-               {:ok, payload_json} <- base64_decode(payload_b64),
-               {:ok, payload} <- Jason.decode(payload_json) do
-            {:ok, header, payload, signature_b64}
-          else
-            _ -> {:error, "invalid JWT format"}
-          end
+    defp peek_header(token) do
+      case Joken.peek_header(token) do
+        {:ok, header} -> {:ok, header}
+        {:error, _} -> {:error, "invalid JWT format"}
+      end
+    rescue
+      _ -> {:error, "invalid JWT format"}
+    end
 
-        _ ->
+    defp verify_algorithm(header, config) do
+      case Map.get(header, "alg") do
+        nil ->
           {:error, "invalid JWT format"}
+
+        alg when alg == config.algorithm ->
+          :ok
+
+        alg ->
+          {:error, "algorithm mismatch: expected #{config.algorithm}, got #{alg}"}
       end
     end
 
-    defp base64_decode(encoded) do
-      # JWT uses URL-safe base64 without padding
-      padding = rem(4 - rem(byte_size(encoded), 4), 4)
-      padded = encoded <> String.duplicate("=", padding)
+    defp build_signer(%{secret: nil}),
+      do: {:error, "no secret key configured for HMAC verification"}
 
-      case Base.url_decode64(padded) do
-        {:ok, decoded} -> {:ok, decoded}
-        :error -> {:error, "invalid base64 encoding"}
+    defp build_signer(%{algorithm: "HS256", secret: secret}),
+      do: {:ok, Joken.Signer.create("HS256", secret)}
+
+    defp build_signer(%{algorithm: algorithm}),
+      do: {:error, "unsupported algorithm: #{algorithm}"}
+
+    defp verify_signature(token, signer) do
+      case Joken.verify(token, signer) do
+        {:ok, claims} -> {:ok, claims}
+        {:error, _reason} -> {:error, "signature verification failed"}
       end
     end
 
-    defp verify_signature(token, signature_b64, header, config) do
-      algorithm = Map.get(header, "alg")
-
-      case {algorithm, config.algorithm} do
-        {"HS256", "HS256"} ->
-          verify_hmac(token, signature_b64, config.secret)
-
-        {alg, expected} ->
-          {:error, "algorithm mismatch: expected #{expected}, got #{alg}"}
-      end
-    end
-
-    defp verify_hmac(token, signature_b64, secret) when is_binary(secret) do
-      # Extract the message part (header.payload)
-      [header_b64, payload_b64 | _] = String.split(token, ".")
-      message = "#{header_b64}.#{payload_b64}"
-
-      # Compute HMAC
-      computed_signature = :crypto.mac(:hmac, :sha256, secret, message)
-      computed_b64 = Base.url_encode64(computed_signature, padding: false)
-
-      # Constant-time comparison
-      if secure_compare(computed_b64, signature_b64) do
-        :ok
-      else
-        {:error, "signature verification failed"}
-      end
-    end
-
-    defp verify_hmac(_token, _signature_b64, nil) do
-      {:error, "no secret key configured for HMAC verification"}
-    end
-
-    # Constant-time comparison to prevent timing attacks
-    defp secure_compare(a, b) when byte_size(a) != byte_size(b), do: false
-
-    defp secure_compare(a, b) do
-      a_bytes = :binary.bin_to_list(a)
-      b_bytes = :binary.bin_to_list(b)
-
-      result =
-        Enum.zip(a_bytes, b_bytes)
-        |> Enum.reduce(0, fn {x, y}, acc -> acc ||| Bitwise.bxor(x, y) end)
-
-      result == 0
-    end
+    # -- Claims (not security-sensitive crypto) ---------------------------------
 
     defp validate_claims(claims, config) do
       with :ok <- validate_required_claims(claims, config.required_claims),
