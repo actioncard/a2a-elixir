@@ -10,9 +10,9 @@ if Code.ensure_loaded?(Plug) and Code.ensure_loaded?(Joken) do
     ## Features
 
     - JWT signature verification via Joken (HS256)
-    - Standard claims validation (exp, nbf, iat, sub)
+    - Expiration (`exp`) and not-before (`nbf`) validation with clock-skew tolerance
     - Issuer and audience verification
-    - Configurable claim requirements
+    - Configurable required claims (default: `["sub"]`)
 
     ## Usage with HMAC (HS256)
 
@@ -182,7 +182,7 @@ if Code.ensure_loaded?(Plug) and Code.ensure_loaded?(Joken) do
         nil ->
           :ok
 
-        exp when is_integer(exp) ->
+        exp when is_number(exp) ->
           now = System.system_time(:second)
 
           if exp + clock_skew >= now do
@@ -201,7 +201,7 @@ if Code.ensure_loaded?(Plug) and Code.ensure_loaded?(Joken) do
         nil ->
           :ok
 
-        nbf when is_integer(nbf) ->
+        nbf when is_number(nbf) ->
           now = System.system_time(:second)
 
           if nbf - clock_skew <= now do
