@@ -1,17 +1,18 @@
-if Code.ensure_loaded?(Plug) and Code.ensure_loaded?(Phoenix.Controller) do
+if Code.ensure_loaded?(Plug) and Code.ensure_loaded?(Phoenix.Controller) and
+     Code.ensure_loaded?(Joken) do
   defmodule AgentmsgElixirWeb.A2AController do
     @moduledoc """
     Phoenix controller for A2A agent-to-agent communication with JWT authentication.
 
     This controller implements the A2A protocol endpoints with Principal authentication
-    using JWT tokens validated against JWKS endpoints. It bridges the gap between
-    simple test authentication and production-grade JWT validation.
+    using JWT bearer tokens (HS256). It bridges the gap between simple test
+    authentication and shared-secret JWT validation.
 
     ## Principal Authentication
 
     Supports JWT bearer tokens with:
-    - JWKS-based signature verification
-    - Standard claims validation (exp, nbf, iat, sub)
+    - HS256 signature verification (via `A2A.Plug.JWTVerifier`)
+    - Standard claims validation (exp, nbf)
     - Issuer and audience verification
     - Configurable claim requirements
 
@@ -48,7 +49,8 @@ if Code.ensure_loaded?(Plug) and Code.ensure_loaded?(Phoenix.Controller) do
 
         config :agentmsg_elixir, AgentmsgElixirWeb.A2AController,
           jwt_verifier: %{
-            jwks_url: "https://auth.example.com/.well-known/jwks.json",
+            secret: System.get_env("JWT_SECRET"),
+            algorithm: "HS256",
             issuer: "https://auth.example.com",
             audience: "a2a-api",
             required_claims: ["sub", "principal_type"]
@@ -65,13 +67,12 @@ if Code.ensure_loaded?(Plug) and Code.ensure_loaded?(Phoenix.Controller) do
     # Default configuration - override in your app config
     @default_config %{
       jwt_verifier: %{
-        jwks_url:
-          System.get_env("JWT_JWKS_URL", "https://auth.example.com/.well-known/jwks.json"),
+        secret: System.get_env("JWT_SECRET"),
+        algorithm: "HS256",
         issuer: System.get_env("JWT_ISSUER", "https://auth.example.com"),
         audience: System.get_env("JWT_AUDIENCE", "a2a-api"),
         required_claims: ["sub", "principal_type"],
-        clock_skew: 60,
-        cache_ttl: 3600
+        clock_skew: 60
       },
       # Must be configured
       agent_module: nil,
@@ -84,7 +85,7 @@ if Code.ensure_loaded?(Plug) and Code.ensure_loaded?(Phoenix.Controller) do
     JWT verification callback for A2A.Plug.Auth.
 
     This function is called by the auth plug to verify JWT bearer tokens.
-    It implements the Principal authentication flow with JWKS validation.
+    It implements the Principal authentication flow with HS256 validation.
 
     ## Parameters
 
@@ -354,19 +355,21 @@ if Code.ensure_loaded?(Plug) and Code.ensure_loaded?(Phoenix.Controller) do
 else
   defmodule AgentmsgElixirWeb.A2AController do
     @moduledoc """
-    A2A Controller - requires Phoenix and Plug to be loaded.
+    A2A Controller - requires Phoenix, Plug, and Joken to be loaded.
 
-    Add `{:phoenix, "~> 1.7"}` to your dependencies to use this module.
+    Add `{:phoenix, "~> 1.7"}` and `{:joken, "~> 2.6"}` to your dependencies
+    to use this module.
     """
 
     def __using__(_opts) do
       raise """
-      AgentmsgElixirWeb.A2AController requires Phoenix and Plug.
+      AgentmsgElixirWeb.A2AController requires Phoenix, Plug, and Joken.
 
       Add to your mix.exs dependencies:
 
         {:phoenix, "~> 1.7"},
-        {:plug, "~> 1.16"}
+        {:plug, "~> 1.16"},
+        {:joken, "~> 2.6"}
       """
     end
   end
