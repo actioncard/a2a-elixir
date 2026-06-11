@@ -385,4 +385,89 @@ defmodule A2A.Plug.JWTVerifierTest do
       assert {:error, _} = JWTVerifier.verify(prod_verifier, test_token)
     end
   end
+
+  # -- Security: forged/malformed tokens ---------------------------------------
+
+  describe "verify/2 security" do
+    # Builds a token with an arbitrary header and a raw (possibly empty) signature,
+    # used to exercise attack vectors that create_jwt_token/2 cannot produce.
+    defp forge(header, payload, signature) do
+      header_b64 = Base.url_encode64(Jason.encode!(header), padding: false)
+      payload_b64 = Base.url_encode64(Jason.encode!(payload), padding: false)
+      "#{header_b64}.#{payload_b64}.#{signature}"
+    end
+
+    test "rejects alg:none token (no signature)" do
+      verifier = JWTVerifier.new(secret: @test_secret)
+      token = forge(%{"alg" => "none", "typ" => "JWT"}, %{"sub" => "attacker"}, "")
+
+      assert {:error, reason} = JWTVerifier.verify(verifier, token)
+      assert reason =~ "algorithm mismatch"
+    end
+
+    test "rejects alg:None case-variant token" do
+      verifier = JWTVerifier.new(secret: @test_secret)
+      token = forge(%{"alg" => "None", "typ" => "JWT"}, %{"sub" => "attacker"}, "")
+
+      assert {:error, reason} = JWTVerifier.verify(verifier, token)
+      assert reason =~ "algorithm mismatch"
+    end
+
+    test "rejects HS256 token with an empty signature" do
+      verifier = JWTVerifier.new(secret: @test_secret)
+      token = forge(%{"alg" => "HS256", "typ" => "JWT"}, %{"sub" => "attacker"}, "")
+
+      assert {:error, "signature verification failed"} = JWTVerifier.verify(verifier, token)
+    end
+
+    test "rejects token with the signature segment stripped" do
+      verifier = JWTVerifier.new(secret: @test_secret)
+      header_b64 = Base.url_encode64(Jason.encode!(%{"alg" => "HS256"}), padding: false)
+      payload_b64 = Base.url_encode64(Jason.encode!(%{"sub" => "x"}), padding: false)
+      token = "#{header_b64}.#{payload_b64}"
+
+      assert {:error, "invalid JWT format"} = JWTVerifier.verify(verifier, token)
+    end
+
+    test "rejects token signed with a different secret" do
+      verifier = JWTVerifier.new(secret: @test_secret)
+      token = create_jwt_token(%{"sub" => "admin"}, "attacker-secret")
+
+      assert {:error, "signature verification failed"} = JWTVerifier.verify(verifier, token)
+    end
+  end
+
+  # -- Claims: RFC 7519 NumericDate edge cases ---------------------------------
+
+  describe "verify/2 numeric date claims" do
+    test "accepts a fractional (float) exp per RFC 7519 NumericDate" do
+      verifier = JWTVerifier.new(secret: @test_secret)
+      token = create_jwt_token(%{"sub" => "user", "exp" => future_timestamp() + 0.5})
+
+      assert {:ok, claims} = JWTVerifier.verify(verifier, token)
+      assert claims["sub"] == "user"
+    end
+
+    test "rejects a non-numeric exp claim" do
+      verifier = JWTVerifier.new(secret: @test_secret)
+      token = create_jwt_token(%{"sub" => "user", "exp" => "#{future_timestamp()}"})
+
+      assert {:error, "invalid exp claim"} = JWTVerifier.verify(verifier, token)
+    end
+
+    test "accepts audience supplied as a list containing the expected value" do
+      verifier = JWTVerifier.new(secret: @test_secret, audience: "a2a-api")
+      token = create_jwt_token(%{"sub" => "user", "aud" => ["other", "a2a-api"]})
+
+      assert {:ok, _claims} = JWTVerifier.verify(verifier, token)
+    end
+
+    test "rejects audience list that does not contain the expected value" do
+      verifier = JWTVerifier.new(secret: @test_secret, audience: "a2a-api")
+      token = create_jwt_token(%{"sub" => "user", "aud" => ["x", "y"]})
+
+      assert {:error, reason} = JWTVerifier.verify(verifier, token)
+      assert reason =~ "audience mismatch"
+    end
+  end
 end
