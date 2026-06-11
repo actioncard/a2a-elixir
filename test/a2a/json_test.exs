@@ -1134,6 +1134,46 @@ defmodule A2A.JSONTest do
         JSON.encode_agent_card(card, [])
       end
     end
+
+    test "encodes rich fields from a populated %A2A.AgentCard{} struct" do
+      card = %A2A.AgentCard{
+        name: "struct-agent",
+        description: "Built from the struct",
+        url: "https://example.com/a2a",
+        version: "2.0.0",
+        skills: [%{id: "s", name: "S", description: "d", tags: ["t"]}],
+        capabilities: %{streaming: true, push_notifications: true},
+        provider: %{organization: "Acme", url: "https://acme.example.com"},
+        documentation_url: "https://docs.example.com"
+      }
+
+      map = JSON.encode_agent_card(card, url: "https://example.com/a2a")
+
+      # Without these struct values being read, all three would be empty/absent.
+      assert map["capabilities"] == %{"streaming" => true, "pushNotifications" => true}
+      assert map["provider"] == %{"organization" => "Acme", "url" => "https://acme.example.com"}
+      assert map["documentationUrl"] == "https://docs.example.com"
+    end
+
+    test "opts override struct fields (backward compatible)" do
+      card = %A2A.AgentCard{
+        name: "struct-agent",
+        description: "d",
+        url: "https://example.com/a2a",
+        version: "1.0.0",
+        skills: [],
+        capabilities: %{streaming: true}
+      }
+
+      map =
+        JSON.encode_agent_card(card,
+          url: "https://example.com/a2a",
+          capabilities: %{push_notifications: true}
+        )
+
+      # opts win over the struct value
+      assert map["capabilities"] == %{"pushNotifications" => true}
+    end
   end
 
   # -------------------------------------------------------------------
