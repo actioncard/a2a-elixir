@@ -259,19 +259,20 @@ defmodule A2A.JSON do
   - `:signatures` — list of JWS signature maps (each `%{"protected" => ...,
     "signature" => ..., "header" => ...}`)
   """
-  @spec encode_agent_card(A2A.Agent.card(), keyword()) :: map()
+  @spec encode_agent_card(A2A.AgentCard.t(), keyword()) :: map()
   def encode_agent_card(card, opts \\ []) do
     url = Keyword.fetch!(opts, :url)
-    capabilities = Keyword.get(opts, :capabilities, %{})
-    input_modes = Keyword.get(opts, :default_input_modes, ["text/plain"])
-    output_modes = Keyword.get(opts, :default_output_modes, ["text/plain"])
+    capabilities = card_field(opts, card, :capabilities, %{})
+    input_modes = card_field(opts, card, :default_input_modes, ["text/plain"])
+    output_modes = card_field(opts, card, :default_output_modes, ["text/plain"])
 
     interfaces =
       Keyword.get(opts, :supported_interfaces) ||
+        non_empty(Map.get(card, :supported_interfaces)) ||
         [%{url: url, protocol_binding: "JSONRPC", protocol_version: "2.0"}]
 
-    security_schemes = Keyword.get(opts, :security_schemes, %{})
-    security = Keyword.get(opts, :security, [])
+    security_schemes = card_field(opts, card, :security_schemes, %{})
+    security = card_field(opts, card, :security, [])
 
     skills =
       Enum.map(card.skills, fn skill ->
@@ -296,15 +297,28 @@ defmodule A2A.JSON do
         "defaultOutputModes" => output_modes,
         "supportedInterfaces" => encode_interfaces(interfaces)
       }
-      |> put_unless_nil("provider", encode_provider(Keyword.get(opts, :provider)))
-      |> put_unless_nil("documentationUrl", Keyword.get(opts, :documentation_url))
-      |> put_unless_nil("iconUrl", Keyword.get(opts, :icon_url))
+      |> put_unless_nil("provider", encode_provider(card_field(opts, card, :provider, nil)))
+      |> put_unless_nil("documentationUrl", card_field(opts, card, :documentation_url, nil))
+      |> put_unless_nil("iconUrl", card_field(opts, card, :icon_url, nil))
       |> put_unless_empty("securitySchemes", encode_security_schemes(security_schemes))
       |> put_unless_empty("security", security)
-      |> put_unless_empty("signatures", Keyword.get(opts, :signatures, []))
+      |> put_unless_empty("signatures", card_field(opts, card, :signatures, []))
 
     map
   end
+
+  # Resolves a field from caller opts first (explicit override), then from the
+  # card struct/map, then the given default. Lets callers pass a fully-populated
+  # %A2A.AgentCard{} OR supply fields via opts (backward compatible).
+  defp card_field(opts, card, key, default) do
+    case Keyword.fetch(opts, key) do
+      {:ok, value} -> value
+      :error -> Map.get(card, key, default) || default
+    end
+  end
+
+  defp non_empty([]), do: nil
+  defp non_empty(value), do: value
 
   @doc """
   Decodes a JSON map into an `%A2A.AgentCard{}` struct.
