@@ -235,7 +235,13 @@ defmodule A2A.JSON do
   end
 
   @doc """
-  Encodes an agent card map with options into the AgentCard JSON format.
+  Encodes an agent card into the AgentCard JSON format.
+
+  Accepts either a plain map (as returned by `A2A.Agent.agent_card/0`) or a
+  fully-populated `%A2A.AgentCard{}` struct. When a struct is passed, fields
+  like `capabilities`, `provider`, `documentation_url`, etc. are read from
+  the struct and used as defaults. Options in `opts` always take precedence
+  over struct fields.
 
   In v1.0 the top-level `url` and `protocolVersion` fields are gone from the
   wire format — both are per-interface. The `:url` option is still required
@@ -243,6 +249,9 @@ defmodule A2A.JSON do
   `:supported_interfaces` directly to override.
 
   ## Options
+
+  All options override the corresponding struct field when a
+  `%A2A.AgentCard{}` is passed as `card`.
 
   - `:url` — agent endpoint URL, used as the default `supportedInterfaces[0].url`
   - `:capabilities` — `AgentCapabilities` map (default: `%{}`)
@@ -259,7 +268,7 @@ defmodule A2A.JSON do
   - `:signatures` — list of JWS signature maps (each `%{"protected" => ...,
     "signature" => ..., "header" => ...}`)
   """
-  @spec encode_agent_card(A2A.AgentCard.t(), keyword()) :: map()
+  @spec encode_agent_card(A2A.AgentCard.t() | A2A.Agent.card(), keyword()) :: map()
   def encode_agent_card(card, opts \\ []) do
     url = Keyword.fetch!(opts, :url)
     capabilities = card_field(opts, card, :capabilities, %{})
@@ -312,8 +321,14 @@ defmodule A2A.JSON do
   # %A2A.AgentCard{} OR supply fields via opts (backward compatible).
   defp card_field(opts, card, key, default) do
     case Keyword.fetch(opts, key) do
-      {:ok, value} -> value
-      :error -> Map.get(card, key, default) || default
+      {:ok, value} ->
+        value
+
+      :error ->
+        case Map.get(card, key) do
+          nil -> default
+          value -> value
+        end
     end
   end
 

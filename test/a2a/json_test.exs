@@ -1135,7 +1135,7 @@ defmodule A2A.JSONTest do
       end
     end
 
-    test "encodes rich fields from a populated %A2A.AgentCard{} struct" do
+    test "encodes all rich fields from a populated %A2A.AgentCard{} struct" do
       card = %A2A.AgentCard{
         name: "struct-agent",
         description: "Built from the struct",
@@ -1144,15 +1144,38 @@ defmodule A2A.JSONTest do
         skills: [%{id: "s", name: "S", description: "d", tags: ["t"]}],
         capabilities: %{streaming: true, push_notifications: true},
         provider: %{organization: "Acme", url: "https://acme.example.com"},
-        documentation_url: "https://docs.example.com"
+        documentation_url: "https://docs.example.com",
+        icon_url: "https://example.com/icon.png",
+        default_input_modes: ["application/json"],
+        default_output_modes: ["application/json", "text/plain"],
+        security_schemes: %{
+          "bearer" => %A2A.SecurityScheme.HTTPAuth{scheme: "bearer"}
+        },
+        security: [%{"bearer" => []}],
+        supported_interfaces: [
+          %{url: "https://a.example.com", protocol_binding: "grpc", protocol_version: "1.0"}
+        ],
+        signatures: [%{"protected" => "p", "signature" => "s"}]
       }
 
       map = JSON.encode_agent_card(card, url: "https://example.com/a2a")
 
-      # Without these struct values being read, all three would be empty/absent.
       assert map["capabilities"] == %{"streaming" => true, "pushNotifications" => true}
       assert map["provider"] == %{"organization" => "Acme", "url" => "https://acme.example.com"}
       assert map["documentationUrl"] == "https://docs.example.com"
+      assert map["iconUrl"] == "https://example.com/icon.png"
+      assert map["defaultInputModes"] == ["application/json"]
+      assert map["defaultOutputModes"] == ["application/json", "text/plain"]
+
+      assert %{"httpAuthSecurityScheme" => %{"scheme" => "bearer"}} =
+               map["securitySchemes"]["bearer"]
+
+      assert map["security"] == [%{"bearer" => []}]
+
+      assert [%{"url" => "https://a.example.com", "protocolBinding" => "grpc"}] =
+               map["supportedInterfaces"]
+
+      assert map["signatures"] == [%{"protected" => "p", "signature" => "s"}]
     end
 
     test "opts override struct fields (backward compatible)" do
@@ -1162,17 +1185,44 @@ defmodule A2A.JSONTest do
         url: "https://example.com/a2a",
         version: "1.0.0",
         skills: [],
-        capabilities: %{streaming: true}
+        capabilities: %{streaming: true},
+        documentation_url: "https://old.example.com",
+        icon_url: "https://old-icon.example.com",
+        default_input_modes: ["application/json"]
       }
 
       map =
         JSON.encode_agent_card(card,
           url: "https://example.com/a2a",
-          capabilities: %{push_notifications: true}
+          capabilities: %{push_notifications: true},
+          documentation_url: "https://new.example.com",
+          icon_url: "https://new-icon.example.com",
+          default_input_modes: ["text/plain", "text/html"]
         )
 
       # opts win over the struct value
       assert map["capabilities"] == %{"pushNotifications" => true}
+      assert map["documentationUrl"] == "https://new.example.com"
+      assert map["iconUrl"] == "https://new-icon.example.com"
+      assert map["defaultInputModes"] == ["text/plain", "text/html"]
+    end
+
+    test "plain map card still works (backward compatible)" do
+      card = %{
+        name: "map-agent",
+        description: "Plain map",
+        version: "1.0.0",
+        skills: [%{id: "s", name: "S", description: "d", tags: []}],
+        opts: []
+      }
+
+      map = JSON.encode_agent_card(card, url: "https://example.com/a2a")
+
+      assert map["name"] == "map-agent"
+      assert map["capabilities"] == %{}
+      assert map["defaultInputModes"] == ["text/plain"]
+      refute Map.has_key?(map, "provider")
+      refute Map.has_key?(map, "documentationUrl")
     end
   end
 
