@@ -3,203 +3,327 @@ if Code.ensure_loaded?(Plug) do
     @moduledoc """
     REST/HTTP-JSON transport server for A2A protocol.
 
-    Provides REST endpoints that receive direct HTTP calls (no JSON-RPC wrapper).
-    Compatible with Python/Go REST transport implementations.
+    Translates REST endpoints into JSON-RPC requests and dispatches them
+    through `A2A.JSONRPC`, reusing the same handler pipeline as `A2A.Plug`.
+    This ensures the extension pipeline and authorization callbacks are
+    applied consistently regardless of transport.
 
     ## Usage
 
-    Add to your Plug pipeline:
+        plug A2A.Transport.REST.Server, agent: MyAgent, base_url: "http://localhost:8080"
 
-        plug A2A.Transport.REST.Server, agent_handler: MyApp.Agent
+    ## Options
 
-    Or use in Phoenix router:
+    Accepts the same options as `A2A.Plug`:
 
-        scope "/", MyApp do
-          forward "/v1", A2A.Transport.REST.Server, agent_handler: MyApp.Agent
-        end
+    - `:agent` — GenServer name or pid of the agent (required)
+    - `:base_url` — the public URL of the agent endpoint (required for card)
+    - `:metadata` — static metadata merged into every call (default: `%{}`)
+    - `:authorize_task` — optional authorization callback (see `A2A.Plug`)
     """
 
     import Plug.Conn
 
     @behaviour Plug
+    @behaviour A2A.JSONRPC
 
-    @doc """
-    Initialize the REST server with agent handler.
-    """
+    alias A2A.JSONRPC.Error
+
+    @impl Plug
+    @spec init(keyword()) :: map()
     def init(opts) do
-      agent_handler = Keyword.fetch!(opts, :agent_handler)
-      %{agent_handler: agent_handler}
+      %{
+        agent: Keyword.fetch!(opts, :agent),
+        base_url: Keyword.get(opts, :base_url),
+        metadata: Keyword.get(opts, :metadata, %{}),
+        authorize_task: Keyword.get(opts, :authorize_task),
+        agent_card_opts: Keyword.get(opts, :agent_card_opts, [])
+      }
     end
 
-    @doc """
-    Handle REST endpoints for A2A protocol.
-    """
+    @impl Plug
+    @spec call(Plug.Conn.t(), map()) :: Plug.Conn.t()
     def call(conn, opts) do
-      %{agent_handler: agent_handler} = opts
-
-      # Fetch query parameters
       conn = Plug.Conn.fetch_query_params(conn)
 
       case {conn.method, conn.path_info} do
         {"POST", ["v1", "message", "send"]} ->
-          handle_send_message(conn, agent_handler)
-
-        {"POST", ["v1", "message", "stream"]} ->
-          handle_send_message_streaming(conn, agent_handler)
-
-        {"GET", ["v1", "messages"]} ->
-          handle_poll_messages(conn, agent_handler)
-
-        {"POST", ["v1", "agents"]} ->
-          handle_register_agent(conn, agent_handler)
-
-        {"GET", ["v1", "agents", agent_id]} ->
-          handle_get_agent(conn, agent_handler, agent_id)
-
-        {"GET", ["v1", "card"]} ->
-          handle_get_card(conn, agent_handler)
+          handle_send_message(conn, opts)
 
         {"GET", ["v1", "tasks", task_id]} ->
-          handle_get_task(conn, agent_handler, task_id)
+          handle_get_task(conn, opts, task_id)
 
         {"POST", ["v1", "tasks", task_id, "cancel"]} ->
-          handle_cancel_task(conn, agent_handler, task_id)
+          handle_cancel_task(conn, opts, task_id)
+
+        {"GET", ["v1", "tasks"]} ->
+          handle_list_tasks(conn, opts)
+
+        {"GET", ["v1", "card"]} ->
+          handle_get_card(conn, opts)
 
         _ ->
-          send_error(conn, 404, "Endpoint not found")
+          send_error(conn, 404, "Not found")
       end
     end
 
-    # Endpoint handlers
+    # -- Endpoint handlers -----------------------------------------------------
 
-    defp handle_send_message(conn, agent_handler) do
+    defp handle_send_message(conn, opts) do
       with {:ok, body} <- read_json_body(conn),
-           %{"message" => message_data} <- body,
-           %{"agent_card" => agent_card_data} <- body,
-           {:ok, message} <- A2A.JSON.decode(message_data, :message),
-           {:ok, agent_card} <- A2A.JSON.decode_agent_card(agent_card_data),
-           {:ok, result} <- agent_handler.handle_message(message, agent_card) do
-        response = %{
-          message_id: generate_message_id(),
-          result: result
+           {:ok, message_data} <- require_field(body, "message") do
+        params =
+          %{"message" => message_data}
+          |> put_unless_nil("metadata", body["metadata"])
+
+        jsonrpc_request = %{
+          "jsonrpc" => "2.0",
+          "id" => 1,
+          "method" => "message/send",
+          "params" => params
         }
 
-        send_json_response(conn, 200, response)
-      else
-        {:error, reason} ->
-          send_error(conn, 400, "Bad request: #{inspect(reason)}")
+        context = build_context(opts)
 
-        error ->
-          send_error(conn, 500, "Internal error: #{inspect(error)}")
-      end
-    end
+        case A2A.JSONRPC.handle(jsonrpc_request, __MODULE__, context) do
+          {:reply, response} ->
+            translate_jsonrpc_response(conn, response)
 
-    defp handle_send_message_streaming(conn, agent_handler) do
-      # TODO: Implement Server-Sent Events (SSE) streaming
-      # For now, delegate to regular send_message
-      handle_send_message(conn, agent_handler)
-    end
-
-    defp handle_poll_messages(conn, agent_handler) do
-      query_params = conn.query_params
-      agent_id = Map.get(query_params, "agent_id")
-
-      if agent_id do
-        case agent_handler.poll_messages(agent_id) do
-          {:ok, messages} ->
-            message_data =
-              Enum.map(messages, fn message ->
-                case A2A.JSON.encode(message) do
-                  {:ok, encoded} -> encoded
-                  {:error, _reason} -> nil
-                end
-              end)
-              |> Enum.reject(&is_nil/1)
-
-            send_json_response(conn, 200, %{messages: message_data})
-
-          {:error, reason} ->
-            send_error(conn, 400, "Failed to poll messages: #{inspect(reason)}")
+          {:stream, _method, _params, _id} ->
+            send_error(conn, 501, "Streaming not supported on REST transport")
         end
       else
-        send_error(conn, 400, "Missing agent_id query parameter")
+        {:error, :body_too_large} ->
+          send_error(conn, 413, "Request body too large")
+
+        {:error, _reason} ->
+          send_error(conn, 400, "Invalid request body")
       end
     end
 
-    defp handle_register_agent(conn, agent_handler) do
-      with {:ok, body} <- read_json_body(conn),
-           %{"agent_card" => agent_card_data} <- body,
-           {:ok, agent_card} <- A2A.JSON.decode_agent_card(agent_card_data),
-           {:ok, result} <- agent_handler.register_agent(agent_card) do
-        send_json_response(conn, 200, %{result: result})
+    defp handle_get_task(conn, opts, task_id) do
+      history_length = conn.query_params["historyLength"]
+
+      params =
+        %{"id" => task_id}
+        |> put_unless_nil("historyLength", parse_integer(history_length))
+
+      dispatch_jsonrpc(conn, opts, "tasks/get", params)
+    end
+
+    defp handle_cancel_task(conn, opts, task_id) do
+      dispatch_jsonrpc(conn, opts, "tasks/cancel", %{"id" => task_id})
+    end
+
+    defp handle_list_tasks(conn, opts) do
+      params =
+        %{}
+        |> put_unless_nil("pageSize", parse_integer(conn.query_params["pageSize"]))
+        |> put_unless_nil("pageToken", conn.query_params["pageToken"])
+
+      dispatch_jsonrpc(conn, opts, "tasks/list", params)
+    end
+
+    defp handle_get_card(conn, opts) do
+      case opts.base_url do
+        nil ->
+          send_error(conn, 500, "Server misconfigured: missing base_url")
+
+        base_url ->
+          card = GenServer.call(opts.agent, :get_agent_card)
+
+          json =
+            A2A.JSON.encode_agent_card(
+              card,
+              [url: base_url] ++ opts.agent_card_opts
+            )
+
+          send_json_response(conn, 200, json)
+      end
+    end
+
+    defp dispatch_jsonrpc(conn, opts, method, params) do
+      jsonrpc_request = %{
+        "jsonrpc" => "2.0",
+        "id" => 1,
+        "method" => method,
+        "params" => params
+      }
+
+      context = build_context(opts)
+
+      case A2A.JSONRPC.handle(jsonrpc_request, __MODULE__, context) do
+        {:reply, response} ->
+          translate_jsonrpc_response(conn, response)
+      end
+    end
+
+    # -- JSONRPC behaviour callbacks -------------------------------------------
+
+    @impl A2A.JSONRPC
+    def handle_send(message, params, %{agent: agent, opts: plug_opts}) do
+      call_opts =
+        params
+        |> build_call_opts(plug_opts)
+        |> maybe_put_fallback(:task_id, message.task_id)
+        |> maybe_put_fallback(:context_id, message.context_id)
+
+      case A2A.call(agent, message, call_opts) do
+        {:ok, task} -> {:ok, task}
+        {:error, _reason} -> {:error, Error.internal_error("Message processing failed")}
+      end
+    end
+
+    @impl A2A.JSONRPC
+    def handle_get(task_id, params, %{agent: agent, opts: plug_opts}) do
+      case GenServer.call(agent, {:get_task, task_id}) do
+        {:ok, task} -> authorize_task(:get, task, params, plug_opts)
+        {:error, :not_found} -> {:error, Error.task_not_found()}
+      end
+    end
+
+    @impl A2A.JSONRPC
+    def handle_cancel(task_id, params, %{agent: agent, opts: plug_opts}) do
+      with {:ok, task} <- fetch_task(agent, task_id),
+           {:ok, _task} <- authorize_task(:cancel, task, params, plug_opts) do
+        case GenServer.call(agent, {:cancel, task_id}) do
+          :ok ->
+            fetch_task_or_error(agent, task_id)
+
+          {:error, :not_found} ->
+            {:error, Error.task_not_found()}
+
+          {:error, _reason} ->
+            {:error, Error.task_not_cancelable("Task cannot be canceled")}
+        end
       else
-        {:error, reason} ->
-          send_error(conn, 400, "Bad request: #{inspect(reason)}")
-
-        error ->
-          send_error(conn, 500, "Internal error: #{inspect(error)}")
+        {:error, :not_found} -> {:error, Error.task_not_found()}
+        {:error, %Error{} = error} -> {:error, error}
       end
     end
 
-    defp handle_get_agent(conn, agent_handler, agent_id) do
-      case agent_handler.get_agent(agent_id) do
-        {:ok, agent_card} ->
-          agent_card_json = A2A.JSON.encode_agent_card(agent_card, url: agent_card.url)
-          send_json_response(conn, 200, %{agent_card: agent_card_json})
-
-        {:error, :not_found} ->
-          send_error(conn, 404, "Agent not found")
-
-        {:error, reason} ->
-          send_error(conn, 500, "Failed to get agent: #{inspect(reason)}")
-      end
-    end
-
-    defp handle_get_card(conn, agent_handler) do
-      case agent_handler.get_card() do
-        {:ok, card_data} ->
-          send_json_response(conn, 200, card_data)
-
-        {:error, reason} ->
-          send_error(conn, 500, "Failed to get card: #{inspect(reason)}")
-      end
-    end
-
-    defp handle_get_task(conn, agent_handler, task_id) do
-      case agent_handler.get_task(task_id) do
-        {:ok, task} ->
-          case A2A.JSON.encode(task) do
-            {:ok, task_json} ->
-              send_json_response(conn, 200, task_json)
-
-            {:error, reason} ->
-              send_error(conn, 500, "Failed to encode task: #{inspect(reason)}")
-          end
-
-        {:error, :not_found} ->
-          send_error(conn, 404, "Task not found")
-
-        {:error, reason} ->
-          send_error(conn, 500, "Failed to get task: #{inspect(reason)}")
-      end
-    end
-
-    defp handle_cancel_task(conn, agent_handler, task_id) do
-      case agent_handler.cancel_task(task_id) do
+    @impl A2A.JSONRPC
+    def handle_list(params, %{agent: agent, opts: plug_opts}) do
+      case GenServer.call(agent, {:list_tasks, params}) do
         {:ok, result} ->
-          send_json_response(conn, 200, %{result: result})
+          {:ok, authorize_task_list(result, params, plug_opts)}
 
-        {:error, :not_found} ->
-          send_error(conn, 404, "Task not found")
+        {:error, :invalid_page_token} ->
+          {:error, Error.invalid_params("\"pageToken\" is invalid")}
 
-        {:error, reason} ->
-          send_error(conn, 500, "Failed to cancel task: #{inspect(reason)}")
+        {:error, _reason} ->
+          {:error, Error.internal_error("Failed to list tasks")}
       end
     end
 
-    # Helper functions
+    # -- Private helpers -------------------------------------------------------
 
-    defp read_json_body(conn) do
+    defp build_context(opts) do
+      %{agent: opts.agent, opts: opts}
+    end
+
+    defp fetch_task(agent, task_id) do
+      case GenServer.call(agent, {:get_task, task_id}) do
+        {:ok, task} -> {:ok, task}
+        {:error, :not_found} -> {:error, :not_found}
+      end
+    end
+
+    defp fetch_task_or_error(agent, task_id) do
+      case GenServer.call(agent, {:get_task, task_id}) do
+        {:ok, task} -> {:ok, task}
+        {:error, :not_found} -> {:error, Error.task_not_found()}
+      end
+    end
+
+    defp authorize_task(_operation, task, _params, %{authorize_task: nil}), do: {:ok, task}
+
+    defp authorize_task(operation, task, params, plug_opts) do
+      context = %{metadata: request_metadata(params, plug_opts), params: params}
+
+      case call_authorizer(plug_opts.authorize_task, operation, task, context) do
+        :ok -> {:ok, task}
+        true -> {:ok, task}
+        {:ok, true} -> {:ok, task}
+        {:ok, _identity} -> {:ok, task}
+        {:error, %Error{} = error} -> {:error, error}
+        _deny -> {:error, Error.task_not_found()}
+      end
+    end
+
+    defp authorize_task_list(result, _params, %{authorize_task: nil}), do: result
+
+    defp authorize_task_list(%{tasks: tasks} = result, params, plug_opts) do
+      authorized =
+        Enum.filter(tasks, fn task ->
+          match?({:ok, ^task}, authorize_task(:list, task, params, plug_opts))
+        end)
+
+      %{
+        result
+        | tasks: authorized,
+          total_size: length(authorized),
+          page_size: length(authorized)
+      }
+    end
+
+    defp call_authorizer(fun, operation, task, context) when is_function(fun, 3) do
+      fun.(operation, task, context)
+    end
+
+    defp call_authorizer(fun, operation, task, _context) when is_function(fun, 2) do
+      fun.(operation, task)
+    end
+
+    defp call_authorizer({module, function}, operation, task, context) do
+      apply(module, function, [operation, task, context])
+    end
+
+    defp build_call_opts(params, plug_opts) do
+      metadata = request_metadata(params, plug_opts)
+
+      []
+      |> maybe_put(:task_id, params["id"])
+      |> maybe_put(:context_id, params["contextId"])
+      |> maybe_put(:metadata, if(metadata == %{}, do: nil, else: metadata))
+    end
+
+    defp request_metadata(params, plug_opts) do
+      merge_unless_nil(plug_opts.metadata, params["metadata"])
+    end
+
+    defp merge_unless_nil(base, nil), do: base
+    defp merge_unless_nil(base, override), do: Map.merge(base, override)
+
+    defp maybe_put(opts, _key, nil), do: opts
+    defp maybe_put(opts, key, val), do: [{key, val} | opts]
+
+    defp maybe_put_fallback(opts, key, val) do
+      if Keyword.has_key?(opts, key), do: opts, else: maybe_put(opts, key, val)
+    end
+
+    # -- JSON-RPC to REST response translation ---------------------------------
+
+    defp translate_jsonrpc_response(conn, %{"result" => result}) do
+      send_json_response(conn, 200, result)
+    end
+
+    defp translate_jsonrpc_response(conn, %{"error" => error}) do
+      status = error_code_to_http_status(error["code"])
+      send_error(conn, status, error["message"])
+    end
+
+    defp error_code_to_http_status(-32_001), do: 404
+    defp error_code_to_http_status(-32_002), do: 409
+    defp error_code_to_http_status(-32_602), do: 400
+    defp error_code_to_http_status(-32_600), do: 400
+    defp error_code_to_http_status(-32_601), do: 404
+    defp error_code_to_http_status(-32_700), do: 400
+    defp error_code_to_http_status(_), do: 500
+
+    # -- Body reading / response helpers ---------------------------------------
+
+    defp read_json_body(%{body_params: %Plug.Conn.Unfetched{}} = conn) do
       case Plug.Conn.read_body(conn) do
         {:ok, body, _conn} ->
           Jason.decode(body)
@@ -212,6 +336,10 @@ if Code.ensure_loaded?(Plug) do
       end
     end
 
+    defp read_json_body(%{body_params: %{} = params}) do
+      {:ok, params}
+    end
+
     defp send_json_response(conn, status, data) do
       conn
       |> put_resp_content_type("application/json")
@@ -219,14 +347,31 @@ if Code.ensure_loaded?(Plug) do
       |> halt()
     end
 
-    defp send_error(conn, status, message) do
-      error_data = %{error: message}
-      send_json_response(conn, status, error_data)
+    defp send_error(conn, status, message) when is_binary(message) do
+      send_json_response(conn, status, %{"error" => message})
     end
 
-    defp generate_message_id do
-      # Generate a unique message ID
-      :crypto.strong_rand_bytes(16) |> Base.url_encode64(padding: false)
+    defp require_field(map, field) when is_map(map) do
+      case Map.fetch(map, field) do
+        {:ok, value} -> {:ok, value}
+        :error -> {:error, {:missing_field, field}}
+      end
     end
+
+    defp require_field(_, _field), do: {:error, :invalid_body}
+
+    defp parse_integer(nil), do: nil
+
+    defp parse_integer(str) when is_binary(str) do
+      case Integer.parse(str) do
+        {int, ""} -> int
+        _ -> nil
+      end
+    end
+
+    defp parse_integer(int) when is_integer(int), do: int
+
+    defp put_unless_nil(map, _key, nil), do: map
+    defp put_unless_nil(map, key, val), do: Map.put(map, key, val)
   end
 end

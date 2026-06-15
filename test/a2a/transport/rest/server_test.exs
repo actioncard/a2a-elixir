@@ -1,194 +1,282 @@
 defmodule A2A.Transport.REST.ServerTest do
   use ExUnit.Case, async: true
+
   import Plug.Test
   import Plug.Conn
 
-  if Code.ensure_loaded?(Plug) do
-    alias A2A.Transport.REST.Server
-    alias A2A.AgentCard
+  alias A2A.Transport.REST.Server
 
-    defmodule TestHandler do
-      @behaviour A2A.Agent
+  defp server_opts(agent, extra \\ []) do
+    Server.init([agent: agent, base_url: "http://localhost:8080"] ++ extra)
+  end
 
-      def agent_card do
-        %AgentCard{
-          name: "test-agent",
-          description: "Test agent for REST transport",
-          url: "http://localhost:8080",
-          version: "1.0.0",
-          skills: []
-        }
-      end
+  defp message_json(text \\ "hello") do
+    %{
+      "messageId" => "msg-test",
+      "role" => "user",
+      "parts" => [%{"kind" => "text", "text" => text}]
+    }
+  end
 
-      def handle_message(message, _agent_card) do
-        {:ok, "Message received: #{A2A.Message.text(message)}"}
-      end
+  defp post_json(path, body) do
+    :post
+    |> conn(path, Jason.encode!(body))
+    |> put_req_header("content-type", "application/json")
+  end
 
-      def handle_cancel(_context), do: :ok
+  defp json_body(c), do: Jason.decode!(c.resp_body)
 
-      def poll_messages(_agent_id) do
-        {:ok, []}
-      end
+  defp owner_authorizer do
+    fn _operation, task, %{metadata: metadata} ->
+      metadata["user_id"] == task.metadata["owner_id"]
+    end
+  end
 
-      def register_agent(_agent_card) do
-        {:ok, :registered}
-      end
+  setup do
+    agent = start_supervised!({A2A.Test.EchoAgent, [name: nil]})
+    {:ok, agent: agent}
+  end
 
-      def get_agent(_agent_id) do
-        {:error, :not_found}
-      end
+  # -- POST /v1/message/send -------------------------------------------------
 
-      def get_card do
-        {:ok,
-         %{
-           name: "test-agent",
-           version: "1.0.0"
-         }}
-      end
+  describe "POST /v1/message/send" do
+    test "returns completed task", %{agent: agent} do
+      opts = server_opts(agent)
 
-      def get_task(_task_id) do
-        {:error, :not_found}
-      end
+      conn =
+        post_json("/v1/message/send", %{"message" => message_json("hi")})
+        |> Server.call(opts)
 
-      def cancel_task(_task_id) do
-        {:error, :not_found}
-      end
+      assert conn.status == 200
+      body = json_body(conn)
+      assert is_binary(body["task"]["id"])
+      assert body["task"]["status"]["state"] == "TASK_STATE_COMPLETED"
     end
 
-    @opts Server.init(agent_handler: TestHandler)
+    test "missing message returns 400", %{agent: agent} do
+      opts = server_opts(agent)
 
-    test "GET /v1/card returns agent card" do
+      conn =
+        post_json("/v1/message/send", %{"oops" => "x"})
+        |> Server.call(opts)
+
+      assert conn.status == 400
+    end
+
+    test "invalid JSON returns 400", %{agent: agent} do
+      opts = server_opts(agent)
+
+      conn =
+        :post
+        |> conn("/v1/message/send", "bad{")
+        |> put_req_header("content-type", "application/json")
+        |> Server.call(opts)
+
+      assert conn.status == 400
+    end
+
+    test "metadata flows to task", %{agent: agent} do
+      opts = server_opts(agent, metadata: %{"env" => "test"})
+
+      conn =
+        post_json("/v1/message/send", %{"message" => message_json()})
+        |> Server.call(opts)
+
+      assert json_body(conn)["task"]["metadata"]["env"] == "test"
+    end
+  end
+
+  # -- GET /v1/tasks/:id -----------------------------------------------------
+
+  describe "GET /v1/tasks/:id" do
+    test "returns existing task", %{agent: agent} do
+      opts = server_opts(agent)
+
+      send_conn =
+        post_json("/v1/message/send", %{"message" => message_json()})
+        |> Server.call(opts)
+
+      task_id = json_body(send_conn)["task"]["id"]
+
+      conn =
+        :get
+        |> conn("/v1/tasks/#{task_id}")
+        |> Server.call(opts)
+
+      assert conn.status == 200
+      body = json_body(conn)
+      assert body["id"] == task_id
+      assert body["status"]["state"] == "TASK_STATE_COMPLETED"
+    end
+
+    test "returns 404 for nonexistent task", %{agent: agent} do
+      opts = server_opts(agent)
+
+      conn =
+        :get
+        |> conn("/v1/tasks/nonexistent")
+        |> Server.call(opts)
+
+      assert conn.status == 404
+    end
+
+    test "authorize_task denies access", %{agent: agent} do
+      opts = server_opts(agent, authorize_task: owner_authorizer())
+
+      send_conn =
+        post_json("/v1/message/send", %{
+          "message" => message_json(),
+          "metadata" => %{"owner_id" => "u-1"}
+        })
+        |> Server.call(opts)
+
+      task_id = json_body(send_conn)["task"]["id"]
+
+      # No user_id in metadata -> authorizer denies -> 404
+      conn =
+        :get
+        |> conn("/v1/tasks/#{task_id}")
+        |> Server.call(opts)
+
+      assert conn.status == 404
+    end
+  end
+
+  # -- POST /v1/tasks/:id/cancel ---------------------------------------------
+
+  describe "POST /v1/tasks/:id/cancel" do
+    test "cancels an input_required task" do
+      agent = start_supervised!({A2A.Test.MultiTurnAgent, [name: nil]})
+      opts = server_opts(agent)
+
+      send_conn =
+        post_json("/v1/message/send", %{"message" => message_json("order pizza")})
+        |> Server.call(opts)
+
+      body = json_body(send_conn)
+      task_id = body["task"]["id"]
+      assert body["task"]["status"]["state"] == "TASK_STATE_INPUT_REQUIRED"
+
+      conn =
+        post_json("/v1/tasks/#{task_id}/cancel", %{})
+        |> Server.call(opts)
+
+      assert conn.status == 200
+      cancel_body = json_body(conn)
+      # tasks/cancel returns the task directly (not wrapped in "task")
+      assert cancel_body["status"]["state"] == "TASK_STATE_CANCELED"
+    end
+
+    test "returns 404 for nonexistent task", %{agent: agent} do
+      opts = server_opts(agent)
+
+      conn =
+        post_json("/v1/tasks/nonexistent/cancel", %{})
+        |> Server.call(opts)
+
+      assert conn.status == 404
+    end
+  end
+
+  # -- GET /v1/tasks ---------------------------------------------------------
+
+  describe "GET /v1/tasks" do
+    test "lists all tasks", %{agent: agent} do
+      opts = server_opts(agent)
+
+      for text <- ["one", "two"] do
+        post_json("/v1/message/send", %{"message" => message_json(text)})
+        |> Server.call(opts)
+      end
+
+      conn =
+        :get
+        |> conn("/v1/tasks")
+        |> Server.call(opts)
+
+      assert conn.status == 200
+      body = json_body(conn)
+      assert is_list(body["tasks"])
+      assert length(body["tasks"]) == 2
+    end
+
+    test "authorize_task filters list", %{agent: agent} do
+      opts = server_opts(agent, authorize_task: owner_authorizer())
+
+      for owner <- ["u-1", "u-2"] do
+        post_json("/v1/message/send", %{
+          "message" => message_json("hi #{owner}"),
+          "metadata" => %{"owner_id" => owner}
+        })
+        |> Server.call(opts)
+      end
+
+      # No user_id -> all denied
+      conn =
+        :get
+        |> conn("/v1/tasks")
+        |> Server.call(opts)
+
+      assert conn.status == 200
+      assert json_body(conn)["tasks"] == []
+    end
+  end
+
+  # -- GET /v1/card ----------------------------------------------------------
+
+  describe "GET /v1/card" do
+    test "returns agent card", %{agent: agent} do
+      opts = server_opts(agent)
+
       conn =
         :get
         |> conn("/v1/card")
-        |> Server.call(@opts)
+        |> Server.call(opts)
 
       assert conn.status == 200
-
-      assert conn.resp_body |> Jason.decode!() == %{
-               "name" => "test-agent",
-               "version" => "1.0.0"
-             }
+      assert json_body(conn)["name"] == "echo"
     end
 
-    test "GET /v1/messages with agent_id returns messages" do
+    test "returns error without base_url", %{agent: agent} do
+      opts = Server.init(agent: agent)
+
       conn =
         :get
-        |> conn("/v1/messages?agent_id=test-agent")
-        |> Server.call(@opts)
+        |> conn("/v1/card")
+        |> Server.call(opts)
 
-      assert conn.status == 200
-      response = conn.resp_body |> Jason.decode!()
-      assert response["messages"] == []
+      assert conn.status == 500
     end
+  end
 
-    test "GET /v1/messages without agent_id returns error" do
-      conn =
-        :get
-        |> conn("/v1/messages")
-        |> Server.call(@opts)
+  # -- Unknown routes --------------------------------------------------------
 
-      assert conn.status == 400
-      response = conn.resp_body |> Jason.decode!()
-      assert response["error"] == "Missing agent_id query parameter"
-    end
+  describe "unknown routes" do
+    test "returns 404", %{agent: agent} do
+      opts = server_opts(agent)
 
-    test "GET /v1/agents/:id returns 404 for unknown agent" do
-      conn =
-        :get
-        |> conn("/v1/agents/unknown")
-        |> Server.call(@opts)
-
-      assert conn.status == 404
-      response = conn.resp_body |> Jason.decode!()
-      assert response["error"] == "Agent not found"
-    end
-
-    test "POST /v1/agents registers agent" do
-      agent_card_json = %{
-        "name" => "new-agent",
-        "description" => "New test agent",
-        "url" => "http://localhost:8080",
-        "version" => "1.0.0",
-        "skills" => []
-      }
-
-      conn =
-        :post
-        |> conn("/v1/agents", Jason.encode!(%{agent_card: agent_card_json}))
-        |> put_req_header("content-type", "application/json")
-        |> Server.call(@opts)
-
-      assert conn.status == 200
-      response = conn.resp_body |> Jason.decode!()
-      assert response["result"] == "registered"
-    end
-
-    test "POST /v1/message/send processes message" do
-      message_json = %{
-        "messageId" => "msg-123",
-        "role" => "user",
-        "parts" => [%{"kind" => "text", "text" => "Hello"}]
-      }
-
-      agent_card_json = %{
-        "name" => "test-agent",
-        "description" => "Test agent",
-        "url" => "http://localhost:8080",
-        "version" => "1.0.0",
-        "skills" => []
-      }
-
-      conn =
-        :post
-        |> conn(
-          "/v1/message/send",
-          Jason.encode!(%{
-            message: message_json,
-            agent_card: agent_card_json
-          })
-        )
-        |> put_req_header("content-type", "application/json")
-        |> Server.call(@opts)
-
-      assert conn.status == 200
-      response = conn.resp_body |> Jason.decode!()
-      assert Map.has_key?(response, "message_id")
-      assert response["result"] == "Message received: Hello"
-    end
-
-    test "GET /v1/tasks/:id returns 404 for unknown task" do
-      conn =
-        :get
-        |> conn("/v1/tasks/unknown")
-        |> Server.call(@opts)
-
-      assert conn.status == 404
-      response = conn.resp_body |> Jason.decode!()
-      assert response["error"] == "Task not found"
-    end
-
-    test "POST /v1/tasks/:id/cancel returns 404 for unknown task" do
-      conn =
-        :post
-        |> conn("/v1/tasks/unknown/cancel")
-        |> put_req_header("content-type", "application/json")
-        |> Server.call(@opts)
-
-      assert conn.status == 404
-      response = conn.resp_body |> Jason.decode!()
-      assert response["error"] == "Task not found"
-    end
-
-    test "unknown endpoint returns 404" do
       conn =
         :get
         |> conn("/v1/unknown")
-        |> Server.call(@opts)
+        |> Server.call(opts)
 
       assert conn.status == 404
-      response = conn.resp_body |> Jason.decode!()
-      assert response["error"] == "Endpoint not found"
+    end
+  end
+
+  # -- Error sanitization ----------------------------------------------------
+
+  describe "error sanitization" do
+    test "no inspect() leaks in errors", %{agent: agent} do
+      opts = server_opts(agent)
+
+      conn =
+        :get
+        |> conn("/v1/tasks/nonexistent")
+        |> Server.call(opts)
+
+      refute conn.resp_body =~ "%{"
+      refute conn.resp_body =~ ":not_found"
     end
   end
 end
