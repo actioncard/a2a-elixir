@@ -51,16 +51,31 @@ if Code.ensure_loaded?(Plug) and Code.ensure_loaded?(Joken) do
             issuer: String.t() | nil,
             audience: String.t() | nil,
             required_claims: [String.t()],
-            clock_skew: integer()
+            clock_skew: non_neg_integer()
           }
 
     @type claim_map :: %{String.t() => any()}
 
     @doc """
     Creates a new JWT verifier configuration.
+
+    Accepts a keyword list of options. See the module documentation for
+    the full list of supported keys.
+
+    ## Examples
+
+        iex> v = A2A.Plug.JWTVerifier.new(secret: "s3cret")
+        iex> v.algorithm
+        "HS256"
+        iex> v.required_claims
+        ["sub"]
+
+        iex> v = A2A.Plug.JWTVerifier.new(secret: "s", issuer: "iss", clock_skew: 120)
+        iex> {v.issuer, v.clock_skew}
+        {"iss", 120}
     """
     @spec new(keyword()) :: verifier()
-    def new(opts) do
+    def new(opts) when is_list(opts) do
       %{
         secret: Keyword.get(opts, :secret),
         algorithm: Keyword.get(opts, :algorithm, "HS256"),
@@ -74,8 +89,23 @@ if Code.ensure_loaded?(Plug) and Code.ensure_loaded?(Joken) do
     @doc """
     Verifies a JWT token and returns the claims.
 
-    Signature verification is performed by Joken. Header/algorithm and claim
-    validation are performed here so error reasons stay descriptive.
+    Performs the following checks in order:
+
+    1. Decodes and validates the JWT header (algorithm match)
+    2. Verifies the cryptographic signature via Joken
+    3. Validates required claims, issuer, audience, expiration, and not-before
+
+    Returns `{:ok, claims}` on success or `{:error, reason}` with a
+    human-readable description of what failed.
+
+    ## Examples
+
+        verifier = A2A.Plug.JWTVerifier.new(secret: "my-secret")
+
+        case A2A.Plug.JWTVerifier.verify(verifier, token) do
+          {:ok, claims} -> IO.inspect(claims["sub"])
+          {:error, reason} -> IO.puts("Auth failed: \#{reason}")
+        end
     """
     @spec verify(verifier(), String.t()) :: {:ok, claim_map()} | {:error, String.t()}
     def verify(config, token) when is_binary(token) do
