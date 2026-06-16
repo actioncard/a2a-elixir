@@ -108,6 +108,52 @@ Enum.each(stream, &IO.inspect/1)
 
 All functions also accept a URL string directly: `A2A.Client.send_message("https://agent.example.com", "Hello!")`.
 
+## Multi-Transport Support
+
+A2A supports multiple transport protocols for different use cases:
+
+### JSON-RPC 2.0 (Default)
+The default transport using single endpoint with method dispatch:
+
+```elixir
+# Built into A2A.Plug and A2A.Client
+{:ok, card} = A2A.Client.discover("https://agent.example.com")
+{:ok, task} = A2A.Client.send_message(card, "Hello!")
+```
+
+### REST Transport
+Direct HTTP endpoints without JSON-RPC wrapping:
+
+```elixir
+# Client
+client = A2A.Transport.REST.new_client("http://localhost:8080")
+{:ok, message_id} = A2A.Transport.REST.Client.send_message(
+  "http://localhost:8080", message, agent_card
+)
+
+# Server
+plug A2A.Transport.REST.Server, agent_handler: MyAgent
+```
+
+### gRPC Transport
+Protocol Buffers over HTTP/2:
+
+```elixir
+# Client
+client = A2A.Transport.GRPC.new_client("127.0.0.1:50051")
+{:ok, task} = A2A.Transport.GRPC.Client.send_message(client, message)
+
+# Server
+{:ok, _pid} = A2A.Transport.GRPC.Server.start_link(agent: MyAgent, port: 50051)
+```
+
+Check available transports:
+
+```elixir
+A2A.Transport.available_transports()
+#=> [:jsonrpc, :rest, :grpc]  # Depends on optional deps
+```
+
 ## Multi-Turn & Streaming
 
 Continue an existing task by passing `task_id`:
@@ -162,12 +208,18 @@ def deps do
   [
     {:a2a, "~> 0.2.0"},
 
-    # For serving A2A endpoints
+    # For serving A2A endpoints (JSON-RPC)
     {:plug, "~> 1.16"},
     {:bandit, "~> 1.5"},
 
-    # For calling remote A2A agents
-    {:req, "~> 0.5"}
+    # For calling remote A2A agents (JSON-RPC)
+    {:req, "~> 0.5"},
+
+    # For REST transport
+    # (requires both plug and req)
+
+    # For gRPC transport
+    {:grpcbox, "~> 0.16"}
   ]
 end
 ```
@@ -241,7 +293,7 @@ Key A2A spec features not yet covered:
 
 - **Push notifications** — webhook delivery on task state changes
 - **Authenticated extended cards** — per-client capability disclosure
-- **REST / gRPC transports** — only JSON-RPC is supported
+- **Multi-transport ready** — JSON-RPC, REST, and gRPC transports available
 - **Version negotiation** — hardcoded to A2A v0.3
 - **Task resubscribe** — reconnecting to active SSE streams
 - **Security middleware** — agent card signatures and OAuth flows (auth plug,
