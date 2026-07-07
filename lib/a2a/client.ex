@@ -138,9 +138,12 @@ if Code.ensure_loaded?(Req) do
       path = Keyword.get(opts, :agent_card_path, "/.well-known/agent-card.json")
       req_opts = take_req_opts(opts)
 
-      base_opts = [base_url: base_url]
-
-      req = Req.new(Keyword.merge(base_opts, req_opts))
+      # Route options through merge_req_opts/2 rather than passing them
+      # straight to Req.new/1: it translates :timeout into Req's
+      # :receive_timeout (Req has no :timeout option), matching how the
+      # message-send functions handle it and keeping the :timeout option
+      # documented on discover/2 working consistently.
+      req = merge_req_opts(Req.new(base_url: base_url), req_opts)
 
       case Req.get(req, url: path) do
         {:ok, %Req.Response{status: 200, body: body}} when is_map(body) ->
