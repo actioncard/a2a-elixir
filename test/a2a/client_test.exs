@@ -92,6 +92,17 @@ defmodule A2A.ClientTest do
       assert {:error, {:unexpected_status, 404}} =
                Client.discover("https://agent.example.com", plug: plug)
     end
+
+    test "accepts the :timeout option without raising" do
+      plug = fn conn ->
+        json_resp(conn, 200, @agent_card_json)
+      end
+
+      # :timeout must be translated to Req's :receive_timeout; passing it
+      # straight to Req.new/1 raises "unknown option :timeout".
+      assert {:ok, %AgentCard{name: "test-agent"}} =
+               Client.discover("https://agent.example.com", plug: plug, timeout: 60_000)
+    end
   end
 
   # -------------------------------------------------------------------
