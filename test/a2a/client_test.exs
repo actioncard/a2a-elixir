@@ -135,6 +135,10 @@ defmodule A2A.ClientTest do
         assert decoded["params"]["id"] == "tsk-existing"
         assert decoded["params"]["contextId"] == "ctx-42"
 
+        # Spec-compliant servers read the ids from the message itself.
+        assert decoded["params"]["message"]["taskId"] == "tsk-existing"
+        assert decoded["params"]["message"]["contextId"] == "ctx-42"
+
         json_resp(conn, 200, jsonrpc_success(%{"task" => @task_json}))
       end
 

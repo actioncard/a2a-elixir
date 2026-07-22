@@ -363,7 +363,7 @@ if Code.ensure_loaded?(Req) do
 
     defp build_send_params(message, opts) do
       req_opts = take_req_opts(opts)
-      msg = normalize_message(message)
+      msg = message |> normalize_message() |> put_message_ids(opts)
       {:ok, encoded_msg} = A2A.JSON.encode(msg)
 
       params =
@@ -374,6 +374,18 @@ if Code.ensure_loaded?(Req) do
         |> put_opt("metadata", opts[:metadata])
 
       {params, req_opts}
+    end
+
+    # The A2A spec carries `taskId`/`contextId` on the Message. Some servers
+    # (e.g. the reference JS SDK) read them only from the message and ignore the
+    # top-level params, so mirror the options onto the message struct. An id set
+    # explicitly on the struct takes precedence over the option.
+    defp put_message_ids(%A2A.Message{} = msg, opts) do
+      %{
+        msg
+        | task_id: msg.task_id || opts[:task_id],
+          context_id: msg.context_id || opts[:context_id]
+      }
     end
 
     defp normalize_message(%A2A.Message{} = msg), do: msg
