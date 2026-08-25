@@ -46,7 +46,7 @@ defmodule A2A.MixProject do
       {:joken, "~> 2.6", optional: true},
       # jose is pulled in by joken; pin to 1.11.10 because 1.11.11+ uses the
       # OTP 26 `dynamic()` type and fails to compile on the OTP 25 CI target.
-      {:jose, "~> 1.11.10 and < 1.11.11", optional: true},
+      {:jose, "~> 1.11.12", optional: true},
 
       # Dev/test
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},
