@@ -19,6 +19,11 @@ updates:
           - "credo"
           - "dialyxir"
         update-types: ["patch", "minor"]
+    ignore:
+      # jose 1.11.11+ uses the `dynamic()` type, which does not exist on the
+      # OTP 25 CI target. Drop this once OTP 25 leaves the test matrix.
+      - dependency-name: "jose"
+        versions: [">= 1.11.11"]
 
   - package-ecosystem: github-actions
     directory: /
