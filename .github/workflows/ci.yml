@@ -17,8 +17,8 @@ jobs:
     runs-on: ubuntu-24.04
     strategy:
       matrix:
-        elixir: ["1.18"]
-        otp: ["27"]
+        elixir: ["1.19"]
+        otp: ["28"]
     steps:
       - uses: actions/checkout@v7
 
@@ -63,14 +63,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - elixir: "1.17"
-            otp: "25"
+          # Floor: oldest Elixir allowed by mix.exs (~> 1.17) on the oldest
+          # maintained OTP. Elixir 1.17 and 1.18 both top out at OTP 27.
           - elixir: "1.17"
             otp: "27"
           - elixir: "1.18"
-            otp: "25"
-          - elixir: "1.18"
             otp: "27"
+          # Primary toolchain: quality, tck, tck-v1 and publish pin to this
+          # pair, so they share the deps/_build caches with this cell.
+          - elixir: "1.19"
+            otp: "28"
+          - elixir: "1.20"
+            otp: "29"
     steps:
       - uses: actions/checkout@v7
 
@@ -107,8 +111,8 @@ jobs:
 
       - uses: erlef/setup-beam@v1
         with:
-          elixir-version: "1.18"
-          otp-version: "27"
+          elixir-version: "1.19"
+          otp-version: "28"
 
       - uses: astral-sh/setup-uv@v7
 
@@ -116,15 +120,15 @@ jobs:
         uses: actions/cache@v6
         with:
           path: deps
-          key: deps-${{ runner.os }}-1.18-27-${{ hashFiles('**/mix.lock') }}
-          restore-keys: deps-${{ runner.os }}-1.18-27-
+          key: deps-${{ runner.os }}-1.19-28-${{ hashFiles('**/mix.lock') }}
+          restore-keys: deps-${{ runner.os }}-1.19-28-
 
       - name: Restore build cache
         uses: actions/cache@v6
         with:
           path: _build
-          key: build-${{ runner.os }}-1.18-27-${{ hashFiles('**/mix.lock') }}
-          restore-keys: build-${{ runner.os }}-1.18-27-
+          key: build-${{ runner.os }}-1.19-28-${{ hashFiles('**/mix.lock') }}
+          restore-keys: build-${{ runner.os }}-1.19-28-
 
       - name: Cache TCK repo
         uses: actions/cache@v6
@@ -166,8 +170,8 @@ jobs:
 
       - uses: erlef/setup-beam@v1
         with:
-          elixir-version: "1.18"
-          otp-version: "27"
+          elixir-version: "1.19"
+          otp-version: "28"
 
       - uses: astral-sh/setup-uv@v7
 
@@ -175,15 +179,15 @@ jobs:
         uses: actions/cache@v6
         with:
           path: deps
-          key: deps-${{ runner.os }}-1.18-27-${{ hashFiles('**/mix.lock') }}
-          restore-keys: deps-${{ runner.os }}-1.18-27-
+          key: deps-${{ runner.os }}-1.19-28-${{ hashFiles('**/mix.lock') }}
+          restore-keys: deps-${{ runner.os }}-1.19-28-
 
       - name: Restore build cache
         uses: actions/cache@v6
         with:
           path: _build
-          key: build-${{ runner.os }}-1.18-27-${{ hashFiles('**/mix.lock') }}
-          restore-keys: build-${{ runner.os }}-1.18-27-
+          key: build-${{ runner.os }}-1.19-28-${{ hashFiles('**/mix.lock') }}
+          restore-keys: build-${{ runner.os }}-1.19-28-
 
       - name: Cache TCK 1.0-dev repo
         uses: actions/cache@v6
@@ -224,8 +228,8 @@ jobs:
 
       - uses: erlef/setup-beam@v1
         with:
-          elixir-version: "1.18"
-          otp-version: "27"
+          elixir-version: "1.19"
+          otp-version: "28"
 
       - run: mix deps.get
 

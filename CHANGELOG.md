@@ -45,6 +45,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   server continues to accept both v1.0 PascalCase and the legacy v0.3
   slash-style names. Pointing the client at a strict v0.3-only server that
   doesn't accept PascalCase is a breaking change.
+- Minimum Erlang/OTP is now 27. CI tests Elixir 1.17 and 1.18 on OTP 27, 1.19
+  on OTP 28, and 1.20 on OTP 29 — the three OTP majors upstream still
+  maintains. OTP 25 and 26 are no longer supported or tested; both are past
+  end-of-life, and OTP 25 has had no patches, including security fixes, since
+  May 2025. The Elixir requirement is unchanged at `~> 1.17`.
+- `jose` is no longer declared as a direct dependency or pinned to 1.11.10.
+  The pin existed only to keep OTP 25 compiling; this library verifies JWTs
+  through Joken and never calls JOSE directly, so jose is now an ordinary
+  transitive dependency of the optional `joken` dep.
 
 ## [0.2.0] - 2026-03-06
 

@@ -154,7 +154,7 @@ defmodule A2A.Test.ITK.Instruction do
 
       2 ->
         {len, rest} = decode_varint(rest)
-        <<data::binary-size(len), rest::binary>> = rest
+        <<data::binary-size(^len), rest::binary>> = rest
         [{field_number, {:length_delimited, data}} | decode_fields(rest)]
 
       1 ->

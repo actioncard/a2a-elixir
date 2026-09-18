@@ -1011,8 +1011,10 @@ defmodule A2A.JSONTest do
     end
 
     test "raises on error" do
+      unsupported = struct(URI, host: "example.com")
+
       assert_raise ArgumentError, ~r/encode failed/, fn ->
-        JSON.encode!(URI.parse("http://example.com"))
+        JSON.encode!(unsupported)
       end
     end
   end
