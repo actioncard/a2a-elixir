@@ -32,8 +32,8 @@
 - Use `doctest` where practical
 - `mix test` — run unit tests (must pass before committing)
 - `mix quality` — run format, credo, dialyzer (must pass before committing)
-- `bin/tck mandatory` — run A2A TCK compliance suite (requires `uv` or `pip`)
-  - TCK server: `test/tck/server.exs` — standalone agent for TCK testing
+- `bin/tck must` — run A2A TCK compliance suite (requires `uv` or `pip`)
+  - TCK server: `test/tck/server_v1.exs` — standalone agent for TCK testing
   - TCK agent: `test/support/agents/tck_agent.ex` — agent used in unit tests
   - Both must stay in sync when changing agent behavior
 
