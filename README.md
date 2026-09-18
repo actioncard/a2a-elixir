@@ -205,7 +205,7 @@ mix credo --strict
 mix dialyzer
 ```
 
-Requires Elixir ~> 1.17.
+Requires Elixir ~> 1.17 and Erlang/OTP 27 or later.
 
 ### TCK (Protocol Compliance)
 

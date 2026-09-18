@@ -1,7 +1,7 @@
 defmodule A2A.MixProject do
   use Mix.Project
 
-  @version "0.2.0"
+  @version "0.3.0"
   @source_url "https://github.com/actioncard/a2a-elixir"
   @a2a_spec_url "https://google.github.io/A2A/"
 
@@ -11,6 +11,8 @@ defmodule A2A.MixProject do
       version: @version,
       elixir: "~> 1.17",
       elixirc_paths: elixirc_paths(Mix.env()),
+      # Standalone scripts launched with `mix run`, not ExUnit files.
+      test_ignore_filters: [~r"/(server|server_v1)\.exs$"],
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       aliases: aliases(),
@@ -44,9 +46,6 @@ defmodule A2A.MixProject do
       {:req, "~> 0.5", optional: true},
       {:bandit, "~> 1.5", optional: true},
       {:joken, "~> 2.6", optional: true},
-      # jose is pulled in by joken; pin to 1.11.10 because 1.11.11+ uses the
-      # OTP 26 `dynamic()` type and fails to compile on the OTP 25 CI target.
-      {:jose, "~> 1.11.10 and < 1.11.11", optional: true},
 
       # Dev/test
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},
