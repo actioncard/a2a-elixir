@@ -214,24 +214,31 @@ The [A2A TCK](https://github.com/a2aproject/a2a-tck) is the official compliance 
 **Prerequisites:** [uv](https://docs.astral.sh/uv/) (Python package manager)
 
 ```bash
-# Run mandatory compliance tests (clones TCK on first run)
-bin/tck mandatory
+# Run MUST-level compliance tests (clones TCK on first run)
+bin/tck must
 
-# Run all categories
+# Run every requirement level
 bin/tck all
 
-# Available categories: mandatory, capabilities, quality, features, all
+# Available levels: must, should, may, all (RFC 2119)
 ```
+
+The TCK is pinned to a known revision so runs are reproducible; bump `TCK_REF`
+in `bin/tck` to move to a newer suite. `bin/tck-v1` tracks the upstream
+`1.0-dev` branch instead, as an unpinned early warning for spec changes.
 
 To run the server manually (e.g. for debugging):
 
 ```bash
 # Default port 9999
-mix run test/tck/server.exs
+mix run test/tck/server_v1.exs
 
 # Custom port
-A2A_TCK_PORT=8080 mix run test/tck/server.exs
+A2A_TCK_PORT=8080 mix run test/tck/server_v1.exs
 ```
+
+`test/tck/server.exs` is the older v0.3 server, kept for manual testing of the
+bearer-auth path that the current compliance suite does not exercise.
 
 The TCK runs on every PR in CI. Reports are uploaded as build artifacts.
 

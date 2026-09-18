@@ -9,21 +9,38 @@ current functionality.
 
 ## TCK Compliance
 
-CI runs `bin/tck all` to exercise every
-[A2A TCK](https://github.com/a2aproject/a2a-tck) category. Quality and feature
-failures are informational (don't block CI); mandatory and capability failures
-are fatal.
+CI runs `bin/tck all` against `test/tck/server_v1.exs`, pinned to a known
+[A2A TCK](https://github.com/a2aproject/a2a-tck) revision (`TCK_REF` in
+`bin/tck`). Upstream replaced its category-based suite with RFC 2119
+requirement levels: MUST failures are hard, SHOULD failures are expected
+failures, MAY tests skip when the capability isn't declared. `bin/tck-v1`
+tracks the upstream `1.0-dev` branch unpinned, as non-blocking early warning.
 
-### Currently Passing
+### Current Results
 
-| Category | What it covers | Notes |
-|----------|----------------|-------|
-| **mandatory / jsonrpc** | JSON-RPC 2.0 compliance, error codes, protocol violations | — |
-| **mandatory / protocol** | Agent card, message send, tasks get/list/cancel, state transitions | Extended card tests skip (not implemented) |
-| **mandatory / security** | Auth enforcement, auth compliance v0.3.0, agent card security | TLS tests skip (HTTP in test); in-task auth skips |
-| **capabilities** | Streaming method validation | Only streaming declared; other capability tests skip |
-| **quality** | Concurrency, resilience, edge cases | Informational |
-| **features** | Agent card utils, business logic, task ID refs | Informational |
+`bin/tck all` — 54 passed, 190 skipped, 21 deselected. The skips are
+capability- and transport-gated tests, not failures.
+
+| Suite area | What it covers | Notes |
+|------------|----------------|-------|
+| **agent_card** | Card shape, extensions, caching headers | ETag / Last-Modified not sent |
+| **core_operations** | Message send, task lifecycle, data model, error handling | Artifact tests need a richer fixture |
+| **jsonrpc** | JSON-RPC 2.0 envelope, error codes, error info | `ErrorInfo` data array missing |
+| **grpc** | gRPC transport binding | Skipped — transport not implemented |
+| **http_json** | REST/HTTP+JSON binding | Skipped — transport not implemented |
+
+### Known Gaps (deselected in `bin/tck`)
+
+Deselected so the job still gates on everything else and a new regression
+turns it red. Two distinct causes:
+
+| Requirement | Cause |
+|-------------|-------|
+| `DM-ART-001` and the other artifact assertions (5 tests) | Fixture only — `test/support/agents/tck_agent.ex` emits no artifacts. The library supports them; the compliance agent doesn't exercise them. |
+| `CARD-CACHE-002` / `CARD-CACHE-003` | Agent card endpoint sets no `ETag` or `Last-Modified` header |
+| `CORE-MULTI-004` | Invalid `taskId` in a message returns `-32603` instead of `-32001` `TaskNotFoundError` |
+| `JSONRPC-ERR-003` | `error.data` omits the required `ErrorInfo` array |
+| Streaming capability error | `test_streaming_not_supported_jsonrpc` |
 
 ### Skipped (Expected)
 
@@ -33,10 +50,14 @@ are fatal.
 | In-task authentication | Agent doesn't trigger `auth-required` state | Optional — agent-level decision |
 | TLS / certificate validation | TCK server runs plain HTTP on localhost | Deploy-time concern, not library |
 | Push notification capabilities | `pushNotifications` not declared | Push Notifications (below) |
-| Transport equivalence | Single transport (JSON-RPC only) | gRPC / REST Transport Bindings (below) |
+| gRPC / HTTP+JSON transports | Single transport (JSON-RPC only) | gRPC / REST Transport Bindings (below) |
 | OAuth2 metadata URL | No OAuth2 scheme configured | Client-Side OAuth 2.0 Flows (below) |
 
 ### Roadmap: Feature → TCK Tests Unlocked
+
+The test paths below predate upstream's restructure into `tests/compatibility/`
+and have not been re-derived; treat them as intent, not literal paths.
+
 
 | # | Feature | TCK tests enabled |
 |---|---------|-------------------|
