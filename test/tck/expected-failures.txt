@@ -1,0 +1,33 @@
+# A2A TCK failures that are known and tracked, not regressions.
+#
+# `bin/tck all` is red only when the actual failure set differs from this file,
+# so a fixed gap is as loud as a new one. Never add a line to silence a
+# regression — fix it. When a gap is closed, delete its line in the same commit.
+#
+# Coupled to TCK_REF in bin/tck: bumping the pin changes node ids, so regenerate
+# this file in the same commit.
+#
+# Comments and blank lines are ignored; order does not matter.
+
+# #72 — compliance fixture emits no artifacts (test fixture, not a library gap)
+tests/compatibility/core_operations/test_artifacts.py::TestTextArtifact::test_task_has_text_artifact[jsonrpc]
+tests/compatibility/core_operations/test_artifacts.py::TestFileArtifact::test_task_has_file_artifact[jsonrpc]
+tests/compatibility/core_operations/test_artifacts.py::TestFileUrlArtifact::test_task_has_file_url_artifact[jsonrpc]
+tests/compatibility/core_operations/test_artifacts.py::TestDataArtifact::test_task_has_data_artifact[jsonrpc]
+
+# #73 — message/send always wraps in a Task, never returns a bare Message
+tests/compatibility/core_operations/test_artifacts.py::TestMessageResponse::test_returns_message_with_text_part[jsonrpc]
+
+# #74 — agent card endpoint sets no ETag / Last-Modified
+tests/compatibility/agent_card/test_agent_card_caching.py::TestAgentCardETag::test_etag_present
+tests/compatibility/agent_card/test_agent_card_caching.py::TestAgentCardLastModified::test_last_modified_present
+
+# #75 — unknown taskId on send returns -32603 instead of -32001
+tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-MULTI-004-jsonrpc]
+
+# #76 — error.data omits the required google.rpc.ErrorInfo array
+tests/compatibility/jsonrpc/test_error_info.py::TestJsonRpcErrorInfo::test_error_data_is_array
+
+# #77 — streaming methods are not gated on capabilities.streaming
+tests/compatibility/core_operations/test_error_handling.py::TestCapabilityStreaming::test_streaming_not_supported_jsonrpc
+tests/compatibility/jsonrpc/test_error_codes.py::TestJsonRpcErrorCodeMappings::test_unsupported_operation_error

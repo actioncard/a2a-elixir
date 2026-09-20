@@ -34,8 +34,9 @@
 - `mix quality` — run format, credo, dialyzer (must pass before committing)
 - `bin/tck must` — run A2A TCK compliance suite (requires `uv` or `pip`)
   - TCK server: `test/tck/server_v1.exs` — standalone agent for TCK testing
-  - TCK agent: `test/support/agents/tck_agent.ex` — agent used in unit tests
-  - Both must stay in sync when changing agent behavior
+  - Targets the A2A v1.0 compatibility suite only, pinned via `TCK_REF`
+  - Known failures are baselined in `test/tck/expected-failures.txt`; the run is
+    red only when the failure set differs from it
 
 ## Version Control
 

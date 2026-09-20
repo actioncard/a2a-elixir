@@ -20,6 +20,9 @@ TCK_DIR=".tck"
 TCK_REF="263b9cfaf16a554bdfb166a7ba5b67716e946349"
 SUT_URL="http://localhost:${PORT}"
 SERVER_PID=""
+BASELINE=""
+ACTUAL=""
+OUTPUT=""
 
 cleanup() {
   if [ -n "$SERVER_PID" ] && kill -0 "$SERVER_PID" 2>/dev/null; then
@@ -27,6 +30,7 @@ cleanup() {
     kill "$SERVER_PID" 2>/dev/null || true
     wait "$SERVER_PID" 2>/dev/null || true
   fi
+  rm -f "$BASELINE" "$ACTUAL" "$OUTPUT"
 }
 
 trap cleanup EXIT
@@ -68,7 +72,7 @@ cd ..
 # --- Start Elixir server ---
 
 echo "Starting TCK server on port $PORT..."
-A2A_TCK_PORT="$PORT" mix run test/tck/server_v1.exs &
+A2A_TCK_PORT="$PORT" mix run test/tck/server_v1.exs >/dev/null 2>&1 &
 SERVER_PID=$!
 
 # Poll until agent card responds
@@ -97,32 +101,15 @@ echo ""
 echo "Running TCK (level: $LEVEL)..."
 echo "========================================"
 
-# Known gaps, deselected so this job gates on everything else and any NEW
-# regression still turns it red. Two distinct causes — see PR discussion.
-#
-# (a) Test-fixture gaps: tck_agent.ex emits no artifacts, so these assert on
-#     something the fixture never produces. The library itself supports
-#     artifacts; the agent used for compliance runs does not exercise them.
-DESELECT_FIXTURE="\
---deselect tests/compatibility/core_operations/test_artifacts.py::TestTextArtifact::test_task_has_text_artifact \
---deselect tests/compatibility/core_operations/test_artifacts.py::TestFileArtifact::test_task_has_file_artifact \
---deselect tests/compatibility/core_operations/test_artifacts.py::TestFileUrlArtifact::test_task_has_file_url_artifact \
---deselect tests/compatibility/core_operations/test_artifacts.py::TestDataArtifact::test_task_has_data_artifact \
---deselect tests/compatibility/core_operations/test_artifacts.py::TestMessageResponse::test_returns_message_with_text_part"
-#
-# (b) Real v1.0 compliance gaps in the library, not yet fixed:
-#     CARD-CACHE-002/003 — agent card endpoint sets no ETag/Last-Modified
-#     CORE-MULTI-004     — returns -32603 instead of -32001 TaskNotFoundError
-#     JSONRPC-ERR-003    — error.data omits the required ErrorInfo array
-DESELECT_GAPS="\
---deselect tests/compatibility/agent_card/test_agent_card_caching.py::TestAgentCardETag::test_etag_present \
---deselect tests/compatibility/agent_card/test_agent_card_caching.py::TestAgentCardLastModified::test_last_modified_present \
---deselect tests/compatibility/core_operations/test_error_handling.py::TestCapabilityStreaming::test_streaming_not_supported_jsonrpc \
---deselect 'tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-MULTI-004-jsonrpc]' \
---deselect tests/compatibility/jsonrpc/test_error_codes.py::TestJsonRpcErrorCodeMappings::test_unsupported_operation_error \
---deselect tests/compatibility/jsonrpc/test_error_info.py::TestJsonRpcErrorInfo::test_error_data_is_array"
-
-export PYTEST_ADDOPTS="$DESELECT_FIXTURE $DESELECT_GAPS"
+# Known failures live in a baseline file rather than being deselected, so a
+# fixed gap is as loud as a new regression. The run is red only when the set of
+# failing tests differs from the baseline.
+BASELINE_FILE="test/tck/expected-failures.txt"
+BASELINE="$(mktemp)"
+ACTUAL="$(mktemp)"
+OUTPUT="$(mktemp)"
+# Comments and blank lines are for humans; the comparison sees node ids only.
+grep -vE '^\s*(#|$)' "$BASELINE_FILE" | sort -u > "$BASELINE" || true
 
 TCK_ARGS="--sut-host $SUT_URL --transport jsonrpc"
 if [ "$LEVEL" != "all" ]; then
@@ -132,13 +119,46 @@ fi
 cd "$TCK_DIR"
 TCK_EXIT=0
 if [ "$USE_UV" = true ]; then
-  uv run ./run_tck.py $TCK_ARGS 2>&1 || TCK_EXIT=$?
+  uv run ./run_tck.py $TCK_ARGS 2>&1 | tee "$OUTPUT" || TCK_EXIT=$?
 else
-  .venv/bin/python ./run_tck.py $TCK_ARGS 2>&1 || TCK_EXIT=$?
+  .venv/bin/python ./run_tck.py $TCK_ARGS 2>&1 | tee "$OUTPUT" || TCK_EXIT=$?
 fi
 cd ..
 
+# Anchored to `tests/` so the runner's own "FAILED REQUIREMENTS:" banner,
+# which is a section header rather than a node id, is not picked up.
+grep -E '^FAILED tests/' "$OUTPUT" | awk '{print $2}' | sort -u > "$ACTUAL" || true
+
+# A non-zero run that produced no FAILED lines is a harness error — the server
+# died, the suite could not collect, uv blew up. Never let that look like a
+# baseline match.
+if [ "$TCK_EXIT" -ne 0 ] && [ ! -s "$ACTUAL" ]; then
+  echo ""
+  echo "========================================"
+  echo "ERROR: TCK exited $TCK_EXIT without reporting any test failures."
+  echo "This is a harness failure, not a compliance result."
+  exit "$TCK_EXIT"
+fi
+
 echo ""
 echo "========================================"
-echo "TCK run complete."
-exit "$TCK_EXIT"
+
+if [ "$LEVEL" != "all" ]; then
+  echo "Level '$LEVEL' run — baseline is only enforced for 'bin/tck all'."
+  echo "$(wc -l < "$ACTUAL" | tr -d ' ') failing test(s)."
+  exit "$TCK_EXIT"
+fi
+
+if ! diff -q "$BASELINE" "$ACTUAL" > /dev/null 2>&1; then
+  echo "TCK results differ from $BASELINE_FILE:"
+  echo ""
+  comm -13 "$BASELINE" "$ACTUAL" | sed 's/^/  NEW FAILURE:  /'
+  comm -23 "$BASELINE" "$ACTUAL" | sed 's/^/  NOW PASSING:  /'
+  echo ""
+  echo "If a gap is fixed, drop its line from $BASELINE_FILE in the same commit."
+  echo "If this is a new regression, fix it — do not add it to the baseline."
+  exit 1
+fi
+
+echo "TCK run complete — $(wc -l < "$BASELINE" | tr -d ' ') known failure(s), matching $BASELINE_FILE."
+exit 0

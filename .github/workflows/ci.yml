@@ -69,7 +69,7 @@ jobs:
             otp: "27"
           - elixir: "1.18"
             otp: "27"
-          # Primary toolchain: quality, tck, tck-v1 and publish pin to this
+          # Primary toolchain: quality, tck and publish pin to this
           # pair, so they share the deps/_build caches with this cell.
           - elixir: "1.19"
             otp: "28"
@@ -140,8 +140,12 @@ jobs:
 
       - run: mix compile
 
-      - name: Run TCK (all categories)
+      - name: Run TCK (every requirement level)
         id: tck-run
+        # `shell: bash` gives `bash --noprofile --norc -eo pipefail {0}`; the
+        # default `bash -e {0}` has no pipefail, so the step would take tee's
+        # exit code and the job could never fail.
+        shell: bash
         run: bin/tck all 2>&1 | tee tck-output.txt
 
       - name: Save PR metadata for comment workflow
@@ -159,63 +163,6 @@ jobs:
             tck-output.txt
             pr-number.txt
             tck-outcome.txt
-          retention-days: 1
-
-  tck-v1:
-    name: TCK 1.0-dev (experimental)
-    runs-on: ubuntu-24.04
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: erlef/setup-beam@v1
-        with:
-          elixir-version: "1.19"
-          otp-version: "28"
-
-      - uses: astral-sh/setup-uv@v7
-
-      - name: Restore dependencies cache
-        uses: actions/cache@v6
-        with:
-          path: deps
-          key: deps-${{ runner.os }}-1.19-28-${{ hashFiles('**/mix.lock') }}
-          restore-keys: deps-${{ runner.os }}-1.19-28-
-
-      - name: Restore build cache
-        uses: actions/cache@v6
-        with:
-          path: _build
-          key: build-${{ runner.os }}-1.19-28-${{ hashFiles('**/mix.lock') }}
-          restore-keys: build-${{ runner.os }}-1.19-28-
-
-      - name: Cache TCK 1.0-dev repo
-        uses: actions/cache@v6
-        with:
-          path: .tck-v1
-          key: tck-v1-${{ hashFiles('bin/tck-v1') }}
-
-      - run: mix deps.get
-
-      - run: mix compile
-
-      - name: Run TCK 1.0-dev
-        id: tck-v1-run
-        run: bin/tck-v1 all 2>&1 | tee tck-v1-output.txt || true
-
-      - name: Save PR metadata for comment workflow
-        if: always() && github.event_name == 'pull_request'
-        run: |
-          echo "${{ github.event.pull_request.number }}" > pr-number.txt
-
-      - name: Upload TCK 1.0-dev results for PR comment
-        if: always() && github.event_name == 'pull_request'
-        uses: actions/upload-artifact@v7
-        with:
-          name: tck-v1-results
-          path: |
-            tck-v1-output.txt
-            pr-number.txt
           retention-days: 1
 
   publish:

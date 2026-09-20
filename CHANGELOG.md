@@ -50,6 +50,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   maintains. OTP 25 and 26 are no longer supported or tested; both are past
   end-of-life, and OTP 25 has had no patches, including security fixes, since
   May 2025. The Elixir requirement is unchanged at `~> 1.17`.
+- The TCK compliance suite now targets A2A v1.0 only. Upstream replaced its
+  v0.3 category suite with the v1.0 `tests/compatibility/` tests, so the v0.3
+  compliance server (`test/tck/server.exs`) and the duplicated `bin/tck-v1`
+  lane have been removed. Known failures are tracked in
+  `test/tck/expected-failures.txt` and the job is red until they are closed;
+  it fails only when the failure set differs from that baseline. This affects
+  the compliance harness only — the server still accepts v0.3 on the wire.
 - `jose` is no longer declared as a direct dependency or pinned to 1.11.10.
   The pin existed only to keep OTP 25 compiling; this library verifies JWTs
   through Joken and never calls JOSE directly, so jose is now an ordinary

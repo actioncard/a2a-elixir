@@ -5,7 +5,7 @@
 #   mix run test/itk/server.exs --httpPort 10110
 #   A2A_ITK_HTTP_PORT=10110 mix run test/itk/server.exs
 #
-# Mirrors test/tck/server.exs, but:
+# Mirrors test/tck/server_v1.exs, but:
 #   * Serves a v0.3-shaped Agent Card (preferredTransport / additionalInterfaces /
 #     url ending in /jsonrpc/) at /jsonrpc/.well-known/agent-card.json. The Elixir
 #     SDK's own card encoder emits the v1.0-style `supportedInterfaces` field which

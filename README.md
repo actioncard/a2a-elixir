@@ -237,10 +237,12 @@ mix run test/tck/server_v1.exs
 A2A_TCK_PORT=8080 mix run test/tck/server_v1.exs
 ```
 
-`test/tck/server.exs` is the older v0.3 server, kept for manual testing of the
-bearer-auth path that the current compliance suite does not exercise.
-
-The TCK runs on every PR in CI. Reports are uploaded as build artifacts.
+The TCK runs on every PR in CI and is **expected to be red** while the tracked
+compliance gaps are open. Known failures live in
+[`test/tck/expected-failures.txt`](test/tck/expected-failures.txt); the run fails
+only when the actual failure set differs from that baseline, so a new regression
+and a newly-fixed gap are both surfaced. Reports are uploaded as build
+artifacts.
 
 ## Not Yet Implemented
 
@@ -249,7 +251,6 @@ Key A2A spec features not yet covered:
 - **Push notifications** — webhook delivery on task state changes
 - **Authenticated extended cards** — per-client capability disclosure
 - **REST / gRPC transports** — only JSON-RPC is supported
-- **Version negotiation** — hardcoded to A2A v0.3
 - **Task resubscribe** — reconnecting to active SSE streams
 - **Security middleware** — agent card signatures and OAuth flows (auth plug,
   task ACL hook, and security scheme data modeling are complete)
