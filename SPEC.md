@@ -11,36 +11,44 @@ current functionality.
 
 CI runs `bin/tck all` against `test/tck/server_v1.exs`, pinned to a known
 [A2A TCK](https://github.com/a2aproject/a2a-tck) revision (`TCK_REF` in
-`bin/tck`). Upstream replaced its category-based suite with RFC 2119
-requirement levels: MUST failures are hard, SHOULD failures are expected
-failures, MAY tests skip when the capability isn't declared. `bin/tck-v1`
-tracks the upstream `1.0-dev` branch unpinned, as non-blocking early warning.
+`bin/tck`). The suite targets **A2A v1.0 only** — upstream replaced its
+category-based v0.3 suite with RFC 2119 requirement levels, so MUST failures
+are hard, SHOULD failures are expected failures, and MAY tests skip when the
+capability isn't declared.
+
+**The TCK job is expected to be red** while the gaps below are open. Known
+failures are listed in
+[`test/tck/expected-failures.txt`](test/tck/expected-failures.txt); `bin/tck`
+compares the actual failure set against that baseline and fails only when they
+differ, so both a new regression and a newly-fixed gap are surfaced. A gap is
+closed by deleting its line in the same commit as the fix.
 
 ### Current Results
 
-`bin/tck all` — 54 passed, 190 skipped, 21 deselected. The skips are
-capability- and transport-gated tests, not failures.
+`bin/tck all` — 54 passed, 11 failed, 200 skipped. The skips are capability-
+and transport-gated tests, not failures.
 
 | Suite area | What it covers | Notes |
 |------------|----------------|-------|
-| **agent_card** | Card shape, extensions, caching headers | ETag / Last-Modified not sent |
-| **core_operations** | Message send, task lifecycle, data model, error handling | Artifact tests need a richer fixture |
-| **jsonrpc** | JSON-RPC 2.0 envelope, error codes, error info | `ErrorInfo` data array missing |
+| **agent_card** | Card shape, extensions, caching headers | ETag / Last-Modified not sent (#74) |
+| **core_operations** | Message send, task lifecycle, data model, error handling | Artifact fixture (#72), Message response (#73), `taskId` error (#75), streaming gate (#77) |
+| **jsonrpc** | JSON-RPC 2.0 envelope, error codes, error info | `ErrorInfo` data array missing (#76) |
 | **grpc** | gRPC transport binding | Skipped — transport not implemented |
 | **http_json** | REST/HTTP+JSON binding | Skipped — transport not implemented |
 
-### Known Gaps (deselected in `bin/tck`)
+### Known Gaps
 
-Deselected so the job still gates on everything else and a new regression
-turns it red. Two distinct causes:
+Every line in the baseline is tracked. Four of the eleven are a thin test
+fixture rather than a library defect.
 
-| Requirement | Cause |
-|-------------|-------|
-| `DM-ART-001` and the other artifact assertions (5 tests) | Fixture only — `test/support/agents/tck_agent.ex` emits no artifacts. The library supports them; the compliance agent doesn't exercise them. |
-| `CARD-CACHE-002` / `CARD-CACHE-003` | Agent card endpoint sets no `ETag` or `Last-Modified` header |
-| `CORE-MULTI-004` | Invalid `taskId` in a message returns `-32603` instead of `-32001` `TaskNotFoundError` |
-| `JSONRPC-ERR-003` | `error.data` omits the required `ErrorInfo` array |
-| Streaming capability error | `test_streaming_not_supported_jsonrpc` |
+| Issue | Requirement(s) | Gap | Kind |
+|-------|----------------|-----|------|
+| #72 | `DM-ART-001` ×4 | Compliance fixture returns `{:stream, …}`, which never produces an artifact on the synchronous send path, and ignores the `messageId` prefix the TCK dispatches on | fixture |
+| #73 | `DM-MSG-001` | `message/send` always wraps in `%{"task" => …}`; the spec permits a bare Message | library, public API |
+| #74 | `CARD-CACHE-002/003` | Agent card endpoint sets no `ETag` or `Last-Modified` | library |
+| #75 | `CORE-MULTI-004` | Unknown `taskId` returns `-32603` instead of `-32001` `TaskNotFoundError` | library |
+| #76 | `JSONRPC-ERR-003` | `error.data` omits the required `google.rpc.ErrorInfo` array | library |
+| #77 | `CORE-CAP-002` + unsupported-operation | Streaming methods are not gated on `capabilities.streaming` | library |
 
 ### Skipped (Expected)
 
