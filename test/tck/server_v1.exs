@@ -49,6 +49,14 @@ defmodule TCK.Agent do
       String.starts_with?(message_id, "tck-artifact-data") ->
         {:reply, [A2A.Part.Data.new(%{"key" => "value", "count" => 42})]}
 
+      # Lifecycle prefixes: the task-history and task-lifecycle suites build a
+      # fixture task with these and skip unless it reaches the expected state.
+      String.starts_with?(message_id, "tck-complete-task") ->
+        {:reply, [A2A.Part.Text.new("Hello from TCK")]}
+
+      String.starts_with?(message_id, "tck-input-required") ->
+        {:input_required, [A2A.Part.Text.new("Please provide additional input")]}
+
       String.contains?(text, "need input") ->
         {:input_required, [A2A.Part.Text.new("Please provide additional input")]}
 

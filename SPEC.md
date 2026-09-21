@@ -25,7 +25,7 @@ closed by deleting its line in the same commit as the fix.
 
 ### Current Results
 
-`bin/tck all` — 62 passed, 2 failed, 201 skipped. The skips are capability-
+`bin/tck all` — 73 passed, 2 failed, 190 skipped. The skips are capability-
 and transport-gated tests, not failures.
 
 | Suite area | What it covers | Notes |
@@ -54,7 +54,8 @@ defects.
 | In-task authentication | Agent doesn't trigger `auth-required` state | Optional — agent-level decision |
 | TLS / certificate validation | TCK server runs plain HTTP on localhost | Deploy-time concern, not library |
 | Push notification capabilities | `pushNotifications` not declared | Push Notifications (below) |
-| SSE streaming (~21 tests, incl. `JSONRPC-SSE-001`) | `streaming` not declared by the TCK server, so the capability gate refuses `message/stream` | Declaring `capabilities.streaming` on `test/tck/server_v1.exs` |
+| SSE streaming (11 jsonrpc tests, incl. `JSONRPC-SSE-001`) | `streaming` not declared by the TCK server, so the capability gate refuses `message/stream` | #84 |
+| `CORE-MULTI-005` context inference | Tasks get no `contextId` when the client sends none, so the test cannot run | Server-assigned `contextId` (not yet tracked) |
 | gRPC / HTTP+JSON transports | Single transport (JSON-RPC only) | gRPC / REST Transport Bindings (below) |
 | OAuth2 metadata URL | No OAuth2 scheme configured | Client-Side OAuth 2.0 Flows (below) |
 
