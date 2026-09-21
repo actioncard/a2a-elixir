@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Caching headers on the agent card endpoint per A2A v1.0 §8.6: a quoted
+  `sha256` `ETag` computed from the response body, a `Last-Modified` in RFC
+  7231 IMF-fixdate form, and `Cache-Control: public, max-age=300`. The ETag
+  is computed per request, since `A2A.Plug.put_base_url/2` can change the
+  body. Note the `Cache-Control` value changes even for callers that set
+  nothing: responses previously carried Plug's default of
+  `max-age=0, private, must-revalidate`, which is wrong for a public card.
+- `A2A.Plug` `:last_modified` option — the `DateTime` served in the agent
+  card's `Last-Modified` header (default: `DateTime.utc_now()` evaluated in
+  `init/1`, so build time under Phoenix's compile-time `plug` macro and boot
+  time otherwise).
 - `A2A.Plug` task-level authorization hook for `tasks/get`, `tasks/cancel`, and
   `tasks/list`
 - A2A v1.0 wire format on encode: flat `Part` (no `kind`, with `text` /

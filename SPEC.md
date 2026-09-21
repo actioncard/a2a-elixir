@@ -25,12 +25,12 @@ closed by deleting its line in the same commit as the fix.
 
 ### Current Results
 
-`bin/tck all` — 60 passed, 4 failed, 201 skipped. The skips are capability-
+`bin/tck all` — 62 passed, 2 failed, 201 skipped. The skips are capability-
 and transport-gated tests, not failures.
 
 | Suite area | What it covers | Notes |
 |------------|----------------|-------|
-| **agent_card** | Card shape, extensions, caching headers | ETag / Last-Modified not sent (#74) |
+| **agent_card** | Card shape, extensions, caching headers | — |
 | **core_operations** | Message send, task lifecycle, data model, error handling | Message response (#73) |
 | **jsonrpc** | JSON-RPC 2.0 envelope, error codes, error info | `ErrorInfo` data array missing (#76) |
 | **grpc** | gRPC transport binding | Skipped — transport not implemented |
@@ -38,13 +38,12 @@ and transport-gated tests, not failures.
 
 ### Known Gaps
 
-Every line in the baseline is tracked. All four remaining gaps are library
+Every line in the baseline is tracked. Both remaining gaps are library
 defects.
 
 | Issue | Requirement(s) | Gap | Kind |
 |-------|----------------|-----|------|
 | #73 | `DM-MSG-001` | `message/send` always wraps in `%{"task" => …}`; the spec permits a bare Message | library, public API |
-| #74 | `CARD-CACHE-002/003` | Agent card endpoint sets no `ETag` or `Last-Modified` | library |
 | #76 | `JSONRPC-ERR-003` | `error.data` omits the required `google.rpc.ErrorInfo` array | library |
 
 ### Skipped (Expected)
