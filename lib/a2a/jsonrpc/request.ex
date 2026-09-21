@@ -88,6 +88,21 @@ defmodule A2A.JSONRPC.Request do
 
   def validate_params(%__MODULE__{}), do: :ok
 
+  @doc """
+  Reads `historyLength` from a params map, accepting either spelling.
+
+  The spec names this field `historyLength`, and that is what the REST
+  binding and our own client send. Some JSON-RPC clients send the protobuf
+  field name `history_length` instead, and the reference implementation
+  accepts both, so we do too rather than silently ignoring the limit.
+
+  Returns `nil` when neither key is present.
+  """
+  @spec history_length(map()) :: term() | nil
+  def history_length(%{"historyLength" => hl}), do: hl
+  def history_length(%{"history_length" => hl}), do: hl
+  def history_length(_), do: nil
+
   # -- private ---------------------------------------------------------------
 
   defp validate_jsonrpc(%{"jsonrpc" => "2.0"}), do: :ok
@@ -128,11 +143,12 @@ defmodule A2A.JSONRPC.Request do
   defp bad_status?(%{"status" => _}), do: true
   defp bad_status?(_), do: false
 
-  defp bad_history_length?(%{"historyLength" => hl}) do
-    not is_integer(hl) or hl < 0
+  defp bad_history_length?(params) do
+    case A2A.JSONRPC.Request.history_length(params) do
+      nil -> false
+      hl -> not is_integer(hl) or hl < 0
+    end
   end
-
-  defp bad_history_length?(_), do: false
 
   defp bad_timestamp?(%{"statusTimestampAfter" => ts}) when is_binary(ts) do
     case DateTime.from_iso8601(ts) do

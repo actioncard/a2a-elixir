@@ -49,6 +49,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `message/send` now honours `configuration.historyLength`, truncating the
+  returned task's history the same way `tasks/get` already did. It was
+  previously ignored, so the full history came back regardless.
+- `historyLength` is now also accepted under its protobuf spelling
+  `history_length` on `tasks/get`, `tasks/cancel` and `tasks/resubscribe`.
+  The spec and the REST binding use `historyLength`, but some JSON-RPC
+  clients send the proto field name and the reference implementation accepts
+  both; previously the limit was silently ignored.
 - `message/send` and `message/stream` with an unknown `taskId` now return
   `-32001 TaskNotFoundError` instead of `-32603 InternalError`
 - `message/send` and `message/stream` targeting a task in a terminal state now
