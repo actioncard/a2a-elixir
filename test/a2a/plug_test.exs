@@ -300,7 +300,11 @@ defmodule A2A.PlugTest do
       body = json_body(conn)
       assert body["error"]["code"] == -32_001
       assert body["error"]["message"] == "Task not found"
-      refute Map.has_key?(body["error"], "data")
+
+      # No internal reason leaks, but the spec-required ErrorInfo is present.
+      assert [info] = body["error"]["data"]
+      assert info["reason"] == "TASK_NOT_FOUND"
+      refute Map.has_key?(info, "metadata")
     end
 
     test "terminal task returns unsupported_operation", %{agent: agent} do

@@ -100,13 +100,38 @@ defmodule A2A.JSONRPC.ErrorTest do
   end
 
   describe "to_map/1" do
-    test "without data" do
+    test "an A2A code carries ErrorInfo even with no data" do
       map = Error.to_map(Error.task_not_found())
-      assert map == %{"code" => -32_001, "message" => "Task not found"}
-      refute Map.has_key?(map, "data")
+
+      assert map == %{
+               "code" => -32_001,
+               "message" => "Task not found",
+               "data" => [
+                 %{
+                   "@type" => "type.googleapis.com/google.rpc.ErrorInfo",
+                   "domain" => "a2a-protocol.org",
+                   "reason" => "TASK_NOT_FOUND"
+                 }
+               ]
+             }
     end
 
-    test "with data" do
+    test "an A2A code preserves free-form data under ErrorInfo metadata" do
+      map = Error.to_map(Error.version_not_supported("9.9"))
+      [info] = map["data"]
+
+      assert info["reason"] == "VERSION_NOT_SUPPORTED"
+      assert info["metadata"] == %{"detail" => "9.9"}
+    end
+
+    test "non-binary data is inspected into metadata" do
+      map = Error.to_map(Error.task_not_cancelable({:bad, :state}))
+      [info] = map["data"]
+
+      assert info["metadata"] == %{"detail" => "{:bad, :state}"}
+    end
+
+    test "a standard JSON-RPC code keeps free-form data" do
       map = Error.to_map(Error.internal_error("boom"))
 
       assert map == %{
@@ -114,6 +139,44 @@ defmodule A2A.JSONRPC.ErrorTest do
                "message" => "Internal error",
                "data" => "boom"
              }
+    end
+
+    test "a standard JSON-RPC code omits data when nil" do
+      map = Error.to_map(Error.parse_error())
+
+      assert map == %{"code" => -32_700, "message" => "Invalid JSON payload"}
+      refute Map.has_key?(map, "data")
+    end
+
+    test "every A2A code emits its spec reason" do
+      # Keyed by code, not by constructor name — -32007's reason drops the
+      # "authenticated" prefix its constructor carries.
+      expected = [
+        {Error.task_not_found(), "TASK_NOT_FOUND"},
+        {Error.task_not_cancelable(), "TASK_NOT_CANCELABLE"},
+        {Error.push_notification_not_supported(), "PUSH_NOTIFICATION_NOT_SUPPORTED"},
+        {Error.unsupported_operation(), "UNSUPPORTED_OPERATION"},
+        {Error.content_type_not_supported(), "CONTENT_TYPE_NOT_SUPPORTED"},
+        {Error.invalid_agent_response(), "INVALID_AGENT_RESPONSE"},
+        {Error.authenticated_extended_card_not_configured(),
+         "EXTENDED_AGENT_CARD_NOT_CONFIGURED"},
+        {Error.extension_support_required(), "EXTENSION_SUPPORT_REQUIRED"},
+        {Error.version_not_supported(), "VERSION_NOT_SUPPORTED"}
+      ]
+
+      for {error, reason} <- expected do
+        [info] = Error.to_map(error)["data"]
+        assert info["@type"] == "type.googleapis.com/google.rpc.ErrorInfo"
+        assert info["domain"] == "a2a-protocol.org"
+        assert info["reason"] == reason, "wrong reason for #{error.code}"
+      end
+    end
+
+    test "is idempotent on an already-wrapped error" do
+      once = Error.to_map(Error.task_not_found())
+      twice = Error.to_map(%Error{code: -32_001, message: "Task not found", data: once["data"]})
+
+      assert twice == once
     end
   end
 end

@@ -34,7 +34,17 @@ defmodule A2A.JSONRPC.ResponseTest do
       assert response == %{
                "jsonrpc" => "2.0",
                "id" => 1,
-               "error" => %{"code" => -32_001, "message" => "Task not found"}
+               "error" => %{
+                 "code" => -32_001,
+                 "message" => "Task not found",
+                 "data" => [
+                   %{
+                     "@type" => "type.googleapis.com/google.rpc.ErrorInfo",
+                     "domain" => "a2a-protocol.org",
+                     "reason" => "TASK_NOT_FOUND"
+                   }
+                 ]
+               }
              }
     end
 
