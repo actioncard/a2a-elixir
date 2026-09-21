@@ -5,13 +5,27 @@ defmodule A2A.JSONRPC.Error do
   Provides a struct and named constructors for the 14 error codes defined by
   the A2A protocol (5 standard JSON-RPC + 9 A2A-specific).
 
+  A2A-specific errors (-32001..-32009) serialize with a `google.rpc.ErrorInfo`
+  object inside a `"data"` array, as the spec requires. The 5 standard JSON-RPC
+  codes have no defined `reason` and keep their free-form `data`.
+
   ## Example
 
       iex> error = A2A.JSONRPC.Error.task_not_found()
       iex> error.code
       -32001
       iex> A2A.JSONRPC.Error.to_map(error)
-      %{"code" => -32001, "message" => "Task not found"}
+      %{
+        "code" => -32001,
+        "message" => "Task not found",
+        "data" => [
+          %{
+            "@type" => "type.googleapis.com/google.rpc.ErrorInfo",
+            "domain" => "a2a-protocol.org",
+            "reason" => "TASK_NOT_FOUND"
+          }
+        ]
+      }
   """
 
   @type t :: %__MODULE__{
@@ -22,6 +36,24 @@ defmodule A2A.JSONRPC.Error do
 
   @enforce_keys [:code, :message]
   defstruct [:code, :message, :data]
+
+  @error_info_type "type.googleapis.com/google.rpc.ErrorInfo"
+  @a2a_domain "a2a-protocol.org"
+
+  # Reason strings are keyed by code, not by constructor name: -32007's reason
+  # is EXTENDED_AGENT_CARD_NOT_CONFIGURED while its constructor is
+  # authenticated_extended_card_not_configured/1.
+  @a2a_reasons %{
+    -32_001 => "TASK_NOT_FOUND",
+    -32_002 => "TASK_NOT_CANCELABLE",
+    -32_003 => "PUSH_NOTIFICATION_NOT_SUPPORTED",
+    -32_004 => "UNSUPPORTED_OPERATION",
+    -32_005 => "CONTENT_TYPE_NOT_SUPPORTED",
+    -32_006 => "INVALID_AGENT_RESPONSE",
+    -32_007 => "EXTENDED_AGENT_CARD_NOT_CONFIGURED",
+    -32_008 => "EXTENSION_SUPPORT_REQUIRED",
+    -32_009 => "VERSION_NOT_SUPPORTED"
+  }
 
   @doc "Builds a parse error (-32700)."
   @spec parse_error(term()) :: t()
@@ -142,18 +174,48 @@ defmodule A2A.JSONRPC.Error do
   @doc """
   Converts an error struct to a JSON-ready map.
 
-  The `"data"` key is only included when non-nil.
+  For A2A-specific codes (-32001..-32009) `"data"` is always an array carrying
+  a `google.rpc.ErrorInfo` object; any free-form data is preserved under its
+  `"metadata"`. For standard JSON-RPC codes `"data"` is passed through as-is
+  and omitted when nil.
 
       iex> error = A2A.JSONRPC.Error.internal_error("boom")
       iex> A2A.JSONRPC.Error.to_map(error)
       %{"code" => -32603, "message" => "Internal error", "data" => "boom"}
   """
   @spec to_map(t()) :: map()
-  def to_map(%__MODULE__{data: nil} = error) do
-    %{"code" => error.code, "message" => error.message}
+  def to_map(%__MODULE__{} = error) do
+    base = %{"code" => error.code, "message" => error.message}
+
+    case Map.fetch(@a2a_reasons, error.code) do
+      {:ok, reason} -> Map.put(base, "data", error_details(error.data, reason))
+      :error -> put_unless_nil(base, error.data)
+    end
   end
 
-  def to_map(%__MODULE__{} = error) do
-    %{"code" => error.code, "message" => error.message, "data" => error.data}
+  defp put_unless_nil(base, nil), do: base
+  defp put_unless_nil(base, data), do: Map.put(base, "data", data)
+
+  # Idempotent: an error decoded from the wire and re-serialized (a relay or
+  # proxy path) already carries its ErrorInfo and must not be wrapped twice.
+  defp error_details(data, reason) do
+    if already_wrapped?(data), do: data, else: [error_info(reason, data)]
   end
+
+  defp already_wrapped?(data) when is_list(data) do
+    Enum.any?(data, &match?(%{"@type" => @error_info_type}, &1))
+  end
+
+  defp already_wrapped?(_), do: false
+
+  defp error_info(reason, nil) do
+    %{"@type" => @error_info_type, "domain" => @a2a_domain, "reason" => reason}
+  end
+
+  defp error_info(reason, detail) do
+    Map.put(error_info(reason, nil), "metadata", %{"detail" => stringify(detail)})
+  end
+
+  defp stringify(detail) when is_binary(detail), do: detail
+  defp stringify(detail), do: inspect(detail)
 end

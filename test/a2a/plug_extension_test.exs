@@ -33,6 +33,12 @@ defmodule A2A.PlugExtensionTest do
   end
 
   defp json_body(conn), do: Jason.decode!(conn.resp_body)
+
+  # A2A error codes carry their free-form detail inside the ErrorInfo metadata.
+  defp error_detail(body) do
+    body["error"]["data"] |> hd() |> get_in(["metadata", "detail"])
+  end
+
   defp get_resp_header(conn, key), do: for({k, v} <- conn.resp_headers, k == key, do: v)
 
   setup do
@@ -113,7 +119,7 @@ defmodule A2A.PlugExtensionTest do
 
       body = json_body(conn)
       assert body["error"]["code"] == -32_008
-      assert body["error"]["data"] =~ "https://example.test/ext/passport"
+      assert error_detail(body) =~ "https://example.test/ext/passport"
     end
 
     test "succeeds when required URI is in client header", %{opts: opts} do
@@ -163,7 +169,7 @@ defmodule A2A.PlugExtensionTest do
 
       body = json_body(conn)
       assert body["error"]["code"] == -32_008
-      assert body["error"]["data"] =~ "req-b"
+      assert error_detail(body) =~ "req-b"
     end
   end
 

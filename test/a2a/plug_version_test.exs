@@ -44,6 +44,12 @@ defmodule A2A.PlugVersionTest do
   end
 
   defp json_body(conn), do: Jason.decode!(conn.resp_body)
+
+  # A2A error codes carry their free-form detail inside the ErrorInfo metadata.
+  defp error_detail(body) do
+    body["error"]["data"] |> hd() |> get_in(["metadata", "detail"])
+  end
+
   defp get_resp_header(conn, key), do: for({k, v} <- conn.resp_headers, k == key, do: v)
 
   setup do
@@ -89,7 +95,7 @@ defmodule A2A.PlugVersionTest do
       conn = send_message(opts, "9.9")
       body = json_body(conn)
       assert body["error"]["code"] == -32_009
-      assert body["error"]["data"] == "9.9"
+      assert error_detail(body) == "9.9"
       assert get_resp_header(conn, "a2a-version") == []
     end
 
@@ -97,7 +103,7 @@ defmodule A2A.PlugVersionTest do
       conn = send_message(opts, "abc")
       body = json_body(conn)
       assert body["error"]["code"] == -32_009
-      assert body["error"]["data"] == "abc"
+      assert error_detail(body) == "abc"
     end
   end
 
@@ -111,7 +117,7 @@ defmodule A2A.PlugVersionTest do
       bad = send_message(opts, "0.3")
       body = json_body(bad)
       assert body["error"]["code"] == -32_009
-      assert body["error"]["data"] == "0.3"
+      assert error_detail(body) == "0.3"
     end
 
     test "also rejects the missing-header 0.3 default when 0.3 is unsupported",
@@ -120,7 +126,7 @@ defmodule A2A.PlugVersionTest do
       conn = send_message(opts)
       body = json_body(conn)
       assert body["error"]["code"] == -32_009
-      assert body["error"]["data"] == "0.3"
+      assert error_detail(body) == "0.3"
     end
   end
 

@@ -25,26 +25,25 @@ closed by deleting its line in the same commit as the fix.
 
 ### Current Results
 
-`bin/tck all` — 73 passed, 2 failed, 190 skipped. The skips are capability-
+`bin/tck all` — 77 passed, 1 failed, 187 skipped. The skips are capability-
 and transport-gated tests, not failures.
 
 | Suite area | What it covers | Notes |
 |------------|----------------|-------|
 | **agent_card** | Card shape, extensions, caching headers | — |
 | **core_operations** | Message send, task lifecycle, data model, error handling | Message response (#73) |
-| **jsonrpc** | JSON-RPC 2.0 envelope, error codes, error info | `ErrorInfo` data array missing (#76) |
+| **jsonrpc** | JSON-RPC 2.0 envelope, error codes, error info | — |
 | **grpc** | gRPC transport binding | Skipped — transport not implemented |
 | **http_json** | REST/HTTP+JSON binding | Skipped — transport not implemented |
 
 ### Known Gaps
 
-Every line in the baseline is tracked. Both remaining gaps are library
-defects.
+Every line in the baseline is tracked. The one remaining gap is a library
+defect.
 
 | Issue | Requirement(s) | Gap | Kind |
 |-------|----------------|-----|------|
 | #73 | `DM-MSG-001` | `message/send` always wraps in `%{"task" => …}`; the spec permits a bare Message | library, public API |
-| #76 | `JSONRPC-ERR-003` | `error.data` omits the required `google.rpc.ErrorInfo` array | library |
 
 ### Skipped (Expected)
 

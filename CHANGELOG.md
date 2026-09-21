@@ -64,6 +64,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** A2A-specific errors (-32001 to -32009) now serialize `data` as
+  an array carrying a `google.rpc.ErrorInfo` object, per A2A v1.0
+  `JSONRPC-ERR-003`:
+
+  ```json
+  "data": [{"@type": "type.googleapis.com/google.rpc.ErrorInfo",
+            "domain": "a2a-protocol.org",
+            "reason": "TASK_NOT_FOUND"}]
+  ```
+
+  Where an error previously carried a free-form string in `data` (the rejected
+  version on -32009, the missing extension URIs on -32008, the cancel reason on
+  -32002), that string is preserved under the ErrorInfo's `metadata.detail`
+  rather than dropped. `A2A.Client` surfaces `data` verbatim, so
+  `%A2A.JSONRPC.Error{data: …}` is now a list rather than a string or `nil` for
+  these codes — read `metadata.detail` off the first entry instead. The five
+  standard JSON-RPC codes (-32700, -32600, -32601, -32602, -32603) have no
+  defined reason and keep their free-form `data` unchanged.
 - **Breaking:** `message/stream` is now gated on the declared streaming
   capability. A server that does not advertise `capabilities.streaming`
   returns `-32004 UnsupportedOperationError` instead of opening an SSE
