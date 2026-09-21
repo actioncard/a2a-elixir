@@ -3,8 +3,8 @@
 # Runs the A2A TCK (Technology Compatibility Kit) against a local server.
 #
 # Upstream replaced its v0.3 suite with the v1.0 compatibility suite, so this
-# runs against the v1.0 server. bin/tck-v1 tracks the 1.0-dev branch for early
-# warning; this script stays pinned so the gating job is reproducible.
+# runs against the v1.0 server. This script stays pinned so the gating job is
+# reproducible.
 #
 # Usage: bin/tck [must|should|may|all]
 #

@@ -224,8 +224,7 @@ bin/tck all
 ```
 
 The TCK is pinned to a known revision so runs are reproducible; bump `TCK_REF`
-in `bin/tck` to move to a newer suite. `bin/tck-v1` tracks the upstream
-`1.0-dev` branch instead, as an unpinned early warning for spec changes.
+in `bin/tck` to move to a newer suite.
 
 To run the server manually (e.g. for debugging):
 
