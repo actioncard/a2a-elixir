@@ -25,27 +25,26 @@ closed by deleting its line in the same commit as the fix.
 
 ### Current Results
 
-`bin/tck all` — 58 passed, 7 failed, 200 skipped. The skips are capability-
+`bin/tck all` — 59 passed, 6 failed, 200 skipped. The skips are capability-
 and transport-gated tests, not failures.
 
 | Suite area | What it covers | Notes |
 |------------|----------------|-------|
 | **agent_card** | Card shape, extensions, caching headers | ETag / Last-Modified not sent (#74) |
-| **core_operations** | Message send, task lifecycle, data model, error handling | Message response (#73), `taskId` error (#75), streaming gate (#77) |
+| **core_operations** | Message send, task lifecycle, data model, error handling | Message response (#73), streaming gate (#77) |
 | **jsonrpc** | JSON-RPC 2.0 envelope, error codes, error info | `ErrorInfo` data array missing (#76) |
 | **grpc** | gRPC transport binding | Skipped — transport not implemented |
 | **http_json** | REST/HTTP+JSON binding | Skipped — transport not implemented |
 
 ### Known Gaps
 
-Every line in the baseline is tracked. All seven remaining gaps are library
+Every line in the baseline is tracked. All six remaining gaps are library
 defects.
 
 | Issue | Requirement(s) | Gap | Kind |
 |-------|----------------|-----|------|
 | #73 | `DM-MSG-001` | `message/send` always wraps in `%{"task" => …}`; the spec permits a bare Message | library, public API |
 | #74 | `CARD-CACHE-002/003` | Agent card endpoint sets no `ETag` or `Last-Modified` | library |
-| #75 | `CORE-MULTI-004` | Unknown `taskId` returns `-32603` instead of `-32001` `TaskNotFoundError` | library |
 | #76 | `JSONRPC-ERR-003` | `error.data` omits the required `google.rpc.ErrorInfo` array | library |
 | #77 | `CORE-CAP-002` + unsupported-operation | Streaming methods are not gated on `capabilities.streaming` | library |
 

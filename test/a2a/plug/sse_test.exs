@@ -152,6 +152,16 @@ defmodule A2A.Plug.SSETest do
       assert body["error"]["code"] == -32_603
     end
 
+    test "unknown taskId returns task_not_found", %{agent: agent} do
+      params = put_in(message_params()["message"]["taskId"], "nonexistent")
+      conn = stream_conn(params, agent)
+
+      assert conn.status == 200
+      body = Jason.decode!(conn.resp_body)
+      assert body["error"]["code"] == -32_001
+      assert body["error"]["message"] == "Task not found"
+    end
+
     test "stream that raises sends final failed status" do
       agent = start_supervised!({A2A.Test.CrashingStreamAgent, [name: nil]})
       conn = stream_conn(message_params(), agent)

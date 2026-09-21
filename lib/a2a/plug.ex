@@ -362,6 +362,12 @@ if Code.ensure_loaded?(Plug) do
             {:ok, task, _activations} = A2A.Extension.run_response(activations, task, params)
             {:ok, task}
 
+          {:error, :not_found} ->
+            {:error, Error.task_not_found()}
+
+          {:error, :not_continuable} ->
+            {:error, Error.unsupported_operation()}
+
           {:error, reason} ->
             {:error, Error.internal_error(inspect(reason))}
         end
