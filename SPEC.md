@@ -25,25 +25,24 @@ closed by deleting its line in the same commit as the fix.
 
 ### Current Results
 
-`bin/tck all` — 54 passed, 11 failed, 200 skipped. The skips are capability-
+`bin/tck all` — 58 passed, 7 failed, 200 skipped. The skips are capability-
 and transport-gated tests, not failures.
 
 | Suite area | What it covers | Notes |
 |------------|----------------|-------|
 | **agent_card** | Card shape, extensions, caching headers | ETag / Last-Modified not sent (#74) |
-| **core_operations** | Message send, task lifecycle, data model, error handling | Artifact fixture (#72), Message response (#73), `taskId` error (#75), streaming gate (#77) |
+| **core_operations** | Message send, task lifecycle, data model, error handling | Message response (#73), `taskId` error (#75), streaming gate (#77) |
 | **jsonrpc** | JSON-RPC 2.0 envelope, error codes, error info | `ErrorInfo` data array missing (#76) |
 | **grpc** | gRPC transport binding | Skipped — transport not implemented |
 | **http_json** | REST/HTTP+JSON binding | Skipped — transport not implemented |
 
 ### Known Gaps
 
-Every line in the baseline is tracked. Four of the eleven are a thin test
-fixture rather than a library defect.
+Every line in the baseline is tracked. All seven remaining gaps are library
+defects.
 
 | Issue | Requirement(s) | Gap | Kind |
 |-------|----------------|-----|------|
-| #72 | `DM-ART-001` ×4 | Compliance fixture returns `{:stream, …}`, which never produces an artifact on the synchronous send path, and ignores the `messageId` prefix the TCK dispatches on | fixture |
 | #73 | `DM-MSG-001` | `message/send` always wraps in `%{"task" => …}`; the spec permits a bare Message | library, public API |
 | #74 | `CARD-CACHE-002/003` | Agent card endpoint sets no `ETag` or `Last-Modified` | library |
 | #75 | `CORE-MULTI-004` | Unknown `taskId` returns `-32603` instead of `-32001` `TaskNotFoundError` | library |
