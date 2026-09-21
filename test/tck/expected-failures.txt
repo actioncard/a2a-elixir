@@ -16,9 +16,6 @@ tests/compatibility/core_operations/test_artifacts.py::TestMessageResponse::test
 tests/compatibility/agent_card/test_agent_card_caching.py::TestAgentCardETag::test_etag_present
 tests/compatibility/agent_card/test_agent_card_caching.py::TestAgentCardLastModified::test_last_modified_present
 
-# #75 — unknown taskId on send returns -32603 instead of -32001
-tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-MULTI-004-jsonrpc]
-
 # #76 — error.data omits the required google.rpc.ErrorInfo array
 tests/compatibility/jsonrpc/test_error_info.py::TestJsonRpcErrorInfo::test_error_data_is_array
 

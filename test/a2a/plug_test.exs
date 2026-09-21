@@ -173,6 +173,39 @@ defmodule A2A.PlugTest do
       body = json_body(conn)
       assert body["error"]["code"] == -32_602
     end
+
+    test "unknown taskId returns task_not_found", %{agent: agent} do
+      params = put_in(message_params()["message"]["taskId"], "nonexistent")
+
+      conn =
+        json_rpc_conn("message/send", params)
+        |> A2A.Plug.call(plug_opts(agent))
+
+      body = json_body(conn)
+      assert body["error"]["code"] == -32_001
+      assert body["error"]["message"] == "Task not found"
+      refute Map.has_key?(body["error"], "data")
+    end
+
+    test "terminal task returns unsupported_operation", %{agent: agent} do
+      first =
+        json_rpc_conn("message/send", message_params())
+        |> A2A.Plug.call(plug_opts(agent))
+        |> json_body()
+
+      # EchoAgent completes immediately, so the task is terminal by now.
+      assert first["result"]["task"]["status"]["state"] == "TASK_STATE_COMPLETED"
+      task_id = first["result"]["task"]["id"]
+
+      params = put_in(message_params()["message"]["taskId"], task_id)
+
+      conn =
+        json_rpc_conn("message/send", params)
+        |> A2A.Plug.call(plug_opts(agent))
+
+      body = json_body(conn)
+      assert body["error"]["code"] == -32_004
+    end
   end
 
   # -- tasks/get ---------------------------------------------------------------

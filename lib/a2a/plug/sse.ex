@@ -30,13 +30,21 @@ if Code.ensure_loaded?(Plug) do
           conn = send_task_snapshot(conn, jsonrpc_id, task)
           stream_and_finalize(conn, jsonrpc_id, task, enum)
 
-        {:error, reason} ->
-          error = Error.internal_error(inspect(reason))
+        {:error, :not_found} ->
+          send_jsonrpc_error(conn, jsonrpc_id, Error.task_not_found())
 
-          conn
-          |> put_resp_content_type("application/json")
-          |> send_resp(200, Jason.encode!(Response.error(jsonrpc_id, error)))
+        {:error, :not_continuable} ->
+          send_jsonrpc_error(conn, jsonrpc_id, Error.unsupported_operation())
+
+        {:error, reason} ->
+          send_jsonrpc_error(conn, jsonrpc_id, Error.internal_error(inspect(reason)))
       end
+    end
+
+    defp send_jsonrpc_error(conn, jsonrpc_id, error) do
+      conn
+      |> put_resp_content_type("application/json")
+      |> send_resp(200, Jason.encode!(Response.error(jsonrpc_id, error)))
     end
 
     defp start_sse(conn) do

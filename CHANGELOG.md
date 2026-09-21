@@ -36,6 +36,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   echoed value. Missing/empty headers are interpreted as `"0.3"`
   (spec §3.6.2) and only `Major.Minor` is significant.
 
+### Fixed
+
+- `message/send` and `message/stream` with an unknown `taskId` now return
+  `-32001 TaskNotFoundError` instead of `-32603 InternalError`
+- `message/send` and `message/stream` targeting a task in a terminal state now
+  return `-32004 UnsupportedOperationError` instead of `-32603 InternalError`
+
 ### Changed
 
 - `TaskStatus.timestamp` is now serialized with a `Z` suffix (UTC) per the
