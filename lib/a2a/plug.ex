@@ -222,6 +222,14 @@ if Code.ensure_loaded?(Plug) do
       Keyword.put(agent_card_opts, :capabilities, caps)
     end
 
+    # Reads the raw agent_card_opts rather than the extension-merged form: only
+    # `:extensions` is injected there, and that is a card concern, not a gate.
+    defp streaming_declared?(opts) do
+      opts.agent_card_opts
+      |> Keyword.get(:capabilities, %{})
+      |> Map.get(:streaming, false)
+    end
+
     # -- JSON-RPC dispatch -----------------------------------------------------
 
     defp handle_json_rpc(conn, opts) do
@@ -275,22 +283,26 @@ if Code.ensure_loaded?(Plug) do
               send_json(conn, response)
 
             {:stream, "message/stream", params, id} ->
-              message = params["message"]
+              if streaming_declared?(opts) do
+                message = params["message"]
 
-              call_opts =
-                params
-                |> build_call_opts(opts)
-                |> maybe_put_fallback(:task_id, message.task_id)
-                |> maybe_put_fallback(:context_id, message.context_id)
-                |> Keyword.put(:extensions, A2A.Extension.to_context_map(activations))
+                call_opts =
+                  params
+                  |> build_call_opts(opts)
+                  |> maybe_put_fallback(:task_id, message.task_id)
+                  |> maybe_put_fallback(:context_id, message.context_id)
+                  |> Keyword.put(:extensions, A2A.Extension.to_context_map(activations))
 
-              A2A.Plug.SSE.stream_message(
-                conn,
-                opts.agent,
-                message,
-                id,
-                call_opts
-              )
+                A2A.Plug.SSE.stream_message(
+                  conn,
+                  opts.agent,
+                  message,
+                  id,
+                  call_opts
+                )
+              else
+                send_json(conn, Response.error(id, Error.unsupported_operation()))
+              end
 
             {:stream, "tasks/resubscribe", _params, id} ->
               send_json(conn, Response.error(id, Error.unsupported_operation()))

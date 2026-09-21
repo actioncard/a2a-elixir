@@ -3,11 +3,17 @@ defmodule A2A.Plug.SSETest do
 
   @moduletag :plug
 
-  defp plug_opts(agent) do
-    A2A.Plug.init(agent: agent, base_url: "http://localhost:4000")
+  # Streaming is gated on the declared capability, so every streaming test has
+  # to advertise it the way a real server would.
+  defp plug_opts(agent, card_opts \\ [capabilities: %{streaming: true}]) do
+    A2A.Plug.init(
+      agent: agent,
+      base_url: "http://localhost:4000",
+      agent_card_opts: card_opts
+    )
   end
 
-  defp stream_conn(params, agent) do
+  defp stream_conn(params, agent, opts \\ nil) do
     body =
       Jason.encode!(%{
         "jsonrpc" => "2.0",
@@ -18,7 +24,7 @@ defmodule A2A.Plug.SSETest do
 
     Plug.Test.conn(:post, "/", body)
     |> Plug.Conn.put_req_header("content-type", "application/json")
-    |> A2A.Plug.call(plug_opts(agent))
+    |> A2A.Plug.call(opts || plug_opts(agent))
   end
 
   defp message_params(text \\ "hello") do
@@ -111,7 +117,8 @@ defmodule A2A.Plug.SSETest do
         A2A.Plug.init(
           agent: agent,
           base_url: "http://localhost:4000",
-          metadata: %{"env" => "prod"}
+          metadata: %{"env" => "prod"},
+          agent_card_opts: [capabilities: %{streaming: true}]
         )
 
       params =
@@ -137,6 +144,36 @@ defmodule A2A.Plug.SSETest do
       assert task_meta["env"] == "prod"
       assert task_meta["tenant_id"] == "t-1"
       assert task_meta["request_key"] == "val"
+    end
+  end
+
+  describe "streaming capability gate" do
+    test "undeclared streaming returns unsupported_operation", %{agent: agent} do
+      conn = stream_conn(message_params(), agent, plug_opts(agent, []))
+
+      assert conn.status == 200
+      content_type = Plug.Conn.get_resp_header(conn, "content-type") |> hd()
+      assert content_type =~ "application/json"
+      refute content_type =~ "text/event-stream"
+
+      body = Jason.decode!(conn.resp_body)
+      assert body["error"]["code"] == -32_004
+    end
+
+    test "streaming: false returns unsupported_operation", %{agent: agent} do
+      opts = plug_opts(agent, capabilities: %{streaming: false})
+      conn = stream_conn(message_params(), agent, opts)
+
+      body = Jason.decode!(conn.resp_body)
+      assert body["error"]["code"] == -32_004
+    end
+
+    test "other capabilities declared but not streaming still refuses", %{agent: agent} do
+      opts = plug_opts(agent, capabilities: %{push_notifications: true})
+      conn = stream_conn(message_params(), agent, opts)
+
+      body = Jason.decode!(conn.resp_body)
+      assert body["error"]["code"] == -32_004
     end
   end
 

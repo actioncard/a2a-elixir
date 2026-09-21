@@ -45,6 +45,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `message/stream` is now gated on the declared streaming
+  capability. A server that does not advertise `capabilities.streaming`
+  returns `-32004 UnsupportedOperationError` instead of opening an SSE
+  stream, per A2A v1.0 `CORE-CAP-002`. Since capabilities default to `%{}`,
+  every server using the defaults is affected. To keep streaming, pass the
+  capability to `A2A.Plug`:
+
+  ```elixir
+  {A2A.Plug, agent: MyAgent, base_url: url,
+   agent_card_opts: [capabilities: %{streaming: true}]}
+  ```
+
+  Note that `use A2A.Agent, opts: [...]` does *not* work for this — the
+  generated card's `:opts` key is never read (tracked separately).
 - `TaskStatus.timestamp` is now serialized with a `Z` suffix (UTC) per the
   v1.0 schema timestamp regex.
 - `A2A.Client` now sends v1.0 PascalCase JSON-RPC method names

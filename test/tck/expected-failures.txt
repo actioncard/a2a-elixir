@@ -18,7 +18,3 @@ tests/compatibility/agent_card/test_agent_card_caching.py::TestAgentCardLastModi
 
 # #76 — error.data omits the required google.rpc.ErrorInfo array
 tests/compatibility/jsonrpc/test_error_info.py::TestJsonRpcErrorInfo::test_error_data_is_array
-
-# #77 — streaming methods are not gated on capabilities.streaming
-tests/compatibility/core_operations/test_error_handling.py::TestCapabilityStreaming::test_streaming_not_supported_jsonrpc
-tests/compatibility/jsonrpc/test_error_codes.py::TestJsonRpcErrorCodeMappings::test_unsupported_operation_error
