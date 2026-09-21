@@ -29,6 +29,13 @@ if Code.ensure_loaded?(Plug) do
       (default: `[]`)
     - `:agent_card_opts` — keyword options forwarded to
       `A2A.JSON.encode_agent_card/2`
+    - `:last_modified` — `DateTime` served as the agent card's
+      `Last-Modified` header (default: `DateTime.utc_now()` at `init/1`).
+      Under Phoenix's `plug` macro `init/1` runs at compile time, so the
+      default is the build time — which is accurate, since the card is
+      itself a compile-time literal. Called directly, it is boot time.
+      The card also carries a `sha256` `ETag` and
+      `Cache-Control: public, max-age=300`.
     - `:metadata` — static metadata merged into every JSON-RPC call
       (default: `%{}`). Useful for deployment-level metadata like
       `%{"env" => "prod"}`. Overridden per-request by `put_metadata/2`.
@@ -135,6 +142,7 @@ if Code.ensure_loaded?(Plug) do
         agent_card_path: Keyword.get(opts, :agent_card_path, [".well-known", "agent-card.json"]),
         json_rpc_path: Keyword.get(opts, :json_rpc_path, []),
         agent_card_opts: Keyword.get(opts, :agent_card_opts, []),
+        last_modified: Keyword.get(opts, :last_modified, DateTime.utc_now()),
         metadata: Keyword.get(opts, :metadata, %{}),
         authorize_task: Keyword.get(opts, :authorize_task),
         extensions: A2A.Extension.compile(Keyword.get(opts, :extensions, [])),
@@ -201,9 +209,33 @@ if Code.ensure_loaded?(Plug) do
           [url: opts.base_url] ++ agent_card_opts
         )
 
+      # Hash the body actually sent: `base_url` can be overridden per request via
+      # put_base_url/2, so the encoded card is not constant across requests.
+      body = Jason.encode!(json)
+
       conn
       |> put_resp_content_type("application/json")
-      |> send_resp(200, Jason.encode!(json))
+      |> put_resp_header("etag", etag(body))
+      |> put_resp_header("last-modified", http_date(opts.last_modified))
+      # Plug defaults every response to "max-age=0, private, must-revalidate",
+      # which is wrong for a public, shareable agent card.
+      |> put_resp_header("cache-control", "public, max-age=300")
+      |> send_resp(200, body)
+    end
+
+    defp etag(body) do
+      digest = :crypto.hash(:sha256, body) |> Base.encode16(case: :lower)
+      ~s("#{digest}")
+    end
+
+    # RFC 7231 IMF-fixdate. Neither Plug nor Bandit exposes a public formatter.
+    # Round-tripping through Unix time normalizes any zone to UTC without
+    # needing a timezone database.
+    defp http_date(%DateTime{} = dt) do
+      dt
+      |> DateTime.to_unix()
+      |> DateTime.from_unix!()
+      |> Calendar.strftime("%a, %d %b %Y %H:%M:%S GMT")
     end
 
     defp merge_extension_declarations(agent_card_opts, []), do: agent_card_opts

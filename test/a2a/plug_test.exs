@@ -84,6 +84,65 @@ defmodule A2A.PlugTest do
     end
   end
 
+  # -- Agent card caching headers ----------------------------------------------
+
+  describe "agent card caching headers" do
+    defp card_conn(opts, base_url \\ nil) do
+      conn = Plug.Test.conn(:get, "/.well-known/agent-card.json")
+      conn = if base_url, do: A2A.Plug.put_base_url(conn, base_url), else: conn
+      A2A.Plug.call(conn, opts)
+    end
+
+    test "ETag is a quoted sha256 and is stable across identical requests", %{agent: agent} do
+      opts = plug_opts(agent)
+
+      etag = card_conn(opts) |> get_resp_header("etag") |> hd()
+
+      assert etag =~ ~r/^"[0-9a-f]{64}"$/
+      assert etag == card_conn(opts) |> get_resp_header("etag") |> hd()
+    end
+
+    test "ETag tracks the body when base_url is overridden per request", %{agent: agent} do
+      opts = plug_opts(agent)
+
+      default = card_conn(opts) |> get_resp_header("etag") |> hd()
+      overridden = card_conn(opts, "https://other.example") |> get_resp_header("etag") |> hd()
+
+      refute default == overridden
+    end
+
+    test "Last-Modified renders the configured time as an IMF-fixdate", %{agent: agent} do
+      opts = plug_opts(agent, last_modified: ~U[2026-03-06 09:05:01Z])
+
+      assert card_conn(opts) |> get_resp_header("last-modified") |> hd() ==
+               "Fri, 06 Mar 2026 09:05:01 GMT"
+    end
+
+    test "Last-Modified normalizes a non-UTC DateTime", %{agent: agent} do
+      # +02:00 at 11:05:01 is the same instant as 09:05:01 UTC.
+      shifted = %DateTime{
+        ~U[2026-03-06 09:05:01Z]
+        | utc_offset: 7200,
+          std_offset: 0,
+          zone_abbr: "CEST",
+          time_zone: "Europe/Stockholm",
+          hour: 11
+      }
+
+      opts = plug_opts(agent, last_modified: shifted)
+
+      assert card_conn(opts) |> get_resp_header("last-modified") |> hd() ==
+               "Fri, 06 Mar 2026 09:05:01 GMT"
+    end
+
+    test "Cache-Control replaces the Plug default with a public max-age", %{agent: agent} do
+      # Plug.Conn defaults every response to "max-age=0, private,
+      # must-revalidate", so asserting mere presence here would be vacuous.
+      assert card_conn(plug_opts(agent)) |> get_resp_header("cache-control") |> hd() ==
+               "public, max-age=300"
+    end
+  end
+
   # -- Custom paths ------------------------------------------------------------
 
   describe "custom paths" do
