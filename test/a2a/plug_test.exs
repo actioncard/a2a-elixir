@@ -143,6 +143,63 @@ defmodule A2A.PlugTest do
     end
   end
 
+  # -- History length ----------------------------------------------------------
+
+  describe "historyLength" do
+    defp completed_task_id(agent) do
+      json_rpc_conn("message/send", message_params())
+      |> A2A.Plug.call(plug_opts(agent))
+      |> json_body()
+      |> get_in(["result", "task", "id"])
+    end
+
+    test "tasks/get truncates history", %{agent: agent} do
+      task_id = completed_task_id(agent)
+
+      full =
+        json_rpc_conn("tasks/get", %{"id" => task_id})
+        |> A2A.Plug.call(plug_opts(agent))
+        |> json_body()
+
+      assert length(full["result"]["history"]) > 1
+    end
+
+    test "tasks/get accepts historyLength in either spelling", %{agent: agent} do
+      # Spec and our own client send camelCase; some JSON-RPC clients send the
+      # protobuf field name instead, so both must truncate.
+      for key <- ["historyLength", "history_length"] do
+        task_id = completed_task_id(agent)
+
+        body =
+          json_rpc_conn("tasks/get", %{"id" => task_id, key => 0})
+          |> A2A.Plug.call(plug_opts(agent))
+          |> json_body()
+
+        assert body["result"]["history"] in [nil, []], "#{key} did not truncate"
+      end
+    end
+
+    test "message/send honours configuration.historyLength", %{agent: agent} do
+      params = Map.put(message_params(), "configuration", %{"historyLength" => 0})
+
+      body =
+        json_rpc_conn("message/send", params)
+        |> A2A.Plug.call(plug_opts(agent))
+        |> json_body()
+
+      assert body["result"]["task"]["history"] in [nil, []]
+    end
+
+    test "message/send keeps history when no configuration is sent", %{agent: agent} do
+      body =
+        json_rpc_conn("message/send", message_params())
+        |> A2A.Plug.call(plug_opts(agent))
+        |> json_body()
+
+      assert length(body["result"]["task"]["history"]) > 0
+    end
+  end
+
   # -- Custom paths ------------------------------------------------------------
 
   describe "custom paths" do

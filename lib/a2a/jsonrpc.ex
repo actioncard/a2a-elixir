@@ -102,10 +102,16 @@ defmodule A2A.JSONRPC do
   # -- dispatch --------------------------------------------------------------
 
   defp dispatch(%Request{method: "message/send"} = req, handler, ctx) do
+    history_length = Request.history_length(req.params["configuration"] || %{})
+
     with {:ok, message} <- decode_message(req.params),
          {:ok, task} <-
            safe_call(fn -> handler.handle_send(message, req.params, ctx) end),
-         {:ok, encoded} <- A2A.JSON.encode(A2A.Task.strip_stream_metadata(task)) do
+         task =
+           task
+           |> A2A.Task.truncate_history(history_length)
+           |> A2A.Task.strip_stream_metadata(),
+         {:ok, encoded} <- A2A.JSON.encode(task) do
       {:reply, Response.success(req.id, %{"task" => encoded})}
     else
       {:error, %Error{} = error} -> {:reply, Response.error(req.id, error)}
@@ -125,7 +131,7 @@ defmodule A2A.JSONRPC do
 
   defp dispatch(%Request{method: "tasks/get"} = req, handler, ctx) do
     task_id = req.params["id"]
-    history_length = req.params["historyLength"]
+    history_length = Request.history_length(req.params)
 
     with {:ok, task} <-
            safe_call(fn -> handler.handle_get(task_id, req.params, ctx) end),

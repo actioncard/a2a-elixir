@@ -182,6 +182,18 @@ defmodule A2A.JSONRPC.RequestTest do
       assert {:error, %Error{code: -32_602}} = Request.validate_params(req)
     end
 
+    test "tasks/get rejects a negative history_length in either spelling" do
+      for key <- ["historyLength", "history_length"] do
+        req = %Request{
+          jsonrpc: "2.0",
+          method: "tasks/get",
+          params: %{"id" => "t-1", key => -1}
+        }
+
+        assert {:error, %Error{code: -32_602}} = Request.validate_params(req)
+      end
+    end
+
     test "tasks/list rejects invalid timestamp" do
       req = %Request{
         jsonrpc: "2.0",
