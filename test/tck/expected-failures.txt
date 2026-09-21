@@ -9,12 +9,6 @@
 #
 # Comments and blank lines are ignored; order does not matter.
 
-# #72 — compliance fixture emits no artifacts (test fixture, not a library gap)
-tests/compatibility/core_operations/test_artifacts.py::TestTextArtifact::test_task_has_text_artifact[jsonrpc]
-tests/compatibility/core_operations/test_artifacts.py::TestFileArtifact::test_task_has_file_artifact[jsonrpc]
-tests/compatibility/core_operations/test_artifacts.py::TestFileUrlArtifact::test_task_has_file_url_artifact[jsonrpc]
-tests/compatibility/core_operations/test_artifacts.py::TestDataArtifact::test_task_has_data_artifact[jsonrpc]
-
 # #73 — message/send always wraps in a Task, never returns a bare Message
 tests/compatibility/core_operations/test_artifacts.py::TestMessageResponse::test_returns_message_with_text_part[jsonrpc]
 

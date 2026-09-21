@@ -18,11 +18,37 @@ defmodule TCK.Agent do
       }
     ]
 
+  # The TCK dispatches on the `messageId` prefix, not the message body — it sends
+  # identical text for every artifact case (see .tck/sut/a2a-python/sut_agent.py).
+  # Artifact cases must answer `{:reply, …}`: `{:stream, …}` is only drained on the
+  # SSE path, so on a synchronous `message/send` it yields no artifact at all.
   @impl A2A.Agent
   def handle_message(message, _context) do
     text = A2A.Message.text(message) || ""
+    message_id = message.message_id || ""
 
     cond do
+      String.starts_with?(message_id, "tck-artifact-text") ->
+        {:reply, [A2A.Part.Text.new("Generated text content")]}
+
+      # Must precede "tck-artifact-file", which is a prefix of this one.
+      String.starts_with?(message_id, "tck-artifact-file-url") ->
+        file =
+          A2A.FileContent.from_uri("https://example.com/output.txt",
+            name: "output.txt",
+            mime_type: "text/plain"
+          )
+
+        {:reply, [A2A.Part.File.new(file)]}
+
+      String.starts_with?(message_id, "tck-artifact-file") ->
+        file = A2A.FileContent.from_bytes("tck", name: "output.txt", mime_type: "text/plain")
+
+        {:reply, [A2A.Part.File.new(file)]}
+
+      String.starts_with?(message_id, "tck-artifact-data") ->
+        {:reply, [A2A.Part.Data.new(%{"key" => "value", "count" => 42})]}
+
       String.contains?(text, "need input") ->
         {:input_required, [A2A.Part.Text.new("Please provide additional input")]}
 
