@@ -219,6 +219,17 @@ defmodule A2A.JSON do
     {:ok, map}
   end
 
+  def encode(%A2A.PushNotificationConfig{} = config) do
+    map =
+      %{"url" => config.url}
+      |> put_unless_nil("id", config.id)
+      |> put_unless_nil("taskId", config.task_id)
+      |> put_unless_nil("token", config.token)
+      |> put_unless_nil("authentication", encode_push_authentication(config.authentication))
+
+    {:ok, map}
+  end
+
   def encode(%{__struct__: mod}) do
     {:error, {:unsupported_type, mod}}
   end
@@ -404,6 +415,7 @@ defmodule A2A.JSON do
           | :event
           | :status_update_event
           | :artifact_update_event
+          | :push_notification_config
 
   @doc """
   Decodes a JSON map into an Elixir struct of the given type.
@@ -551,6 +563,19 @@ defmodule A2A.JSON do
     end
   end
 
+  def decode(map, :push_notification_config) do
+    with {:ok, url} <- require_field(map, "url") do
+      {:ok,
+       %A2A.PushNotificationConfig{
+         id: Map.get(map, "id"),
+         task_id: Map.get(map, "taskId") || Map.get(map, "task_id"),
+         url: url,
+         token: Map.get(map, "token"),
+         authentication: decode_push_authentication(Map.get(map, "authentication"))
+       }}
+    end
+  end
+
   @doc """
   Decodes a JSON map into an Elixir struct, raising on failure.
   """
@@ -685,6 +710,17 @@ defmodule A2A.JSON do
     end)
   end
 
+  defp encode_push_authentication(nil), do: nil
+
+  defp encode_push_authentication(auth) when is_map(auth) do
+    encoded =
+      %{}
+      |> put_unless_nil("scheme", Map.get(auth, :scheme))
+      |> put_unless_nil("credentials", Map.get(auth, :credentials))
+
+    if encoded == %{}, do: nil, else: encoded
+  end
+
   defp put_unless_nil(map, _key, nil), do: map
   defp put_unless_nil(map, key, value), do: Map.put(map, key, value)
 
@@ -709,6 +745,25 @@ defmodule A2A.JSON do
       :error -> {:error, {:missing_field, field}}
     end
   end
+
+  # The spec names this field `schemes` (an array); the TCK and the v1.0 proto
+  # send a singular `scheme`. Both normalize to a single scheme internally.
+  defp decode_push_authentication(map) when is_map(map) do
+    scheme =
+      case Map.get(map, "scheme") do
+        nil -> map |> Map.get("schemes", []) |> List.first()
+        scheme -> scheme
+      end
+
+    auth =
+      %{}
+      |> put_unless_nil(:scheme, scheme)
+      |> put_unless_nil(:credentials, Map.get(map, "credentials"))
+
+    if auth == %{}, do: nil, else: auth
+  end
+
+  defp decode_push_authentication(_), do: nil
 
   defp require_non_empty([], field), do: {:error, {:empty_field, field}}
   defp require_non_empty([_ | _], _field), do: :ok

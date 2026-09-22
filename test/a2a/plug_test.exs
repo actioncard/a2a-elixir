@@ -691,6 +691,220 @@ defmodule A2A.PlugTest do
     end
   end
 
+  # -- tasks/pushNotificationConfig --------------------------------------------
+
+  describe "push notification configs" do
+    test "every method is unsupported when the capability is not declared", %{agent: agent} do
+      opts = plug_opts(agent)
+
+      methods = [
+        {"set", %{"task_id" => "tsk-1", "url" => "https://example.com/hook"}},
+        {"get", %{"task_id" => "tsk-1", "id" => "pcfg-1"}},
+        {"list", %{"task_id" => "tsk-1"}},
+        {"delete", %{"task_id" => "tsk-1", "id" => "pcfg-1"}}
+      ]
+
+      for {method, params} <- methods do
+        conn =
+          json_rpc_conn("tasks/pushNotificationConfig/#{method}", params)
+          |> A2A.Plug.call(opts)
+
+        assert json_body(conn)["error"]["code"] == -32_003, "#{method} was not gated"
+      end
+    end
+
+    # The gate lives in the handler callback, which params are decoded before
+    # reaching. A malformed body is therefore reported as malformed rather than
+    # as unsupported — the well-formed case above is what the spec pins down.
+    test "a malformed set is invalid params, not unsupported", %{agent: agent} do
+      conn =
+        json_rpc_conn("tasks/pushNotificationConfig/set", %{"task_id" => "tsk-1"})
+        |> A2A.Plug.call(plug_opts(agent))
+
+      assert json_body(conn)["error"]["code"] == -32_602
+    end
+
+    test "set, get, list and delete round-trip once declared", %{agent: agent} do
+      opts = push_opts(agent)
+      task_id = create_task(opts)
+
+      set_body =
+        json_rpc_conn("CreateTaskPushNotificationConfig", %{
+          "task_id" => task_id,
+          "id" => "pcfg-1",
+          "url" => "https://example.com/hook",
+          "authentication" => %{"scheme" => "Bearer", "credentials" => "s3cret"}
+        })
+        |> A2A.Plug.call(opts)
+        |> json_body()
+
+      assert set_body["result"]["id"] == "pcfg-1"
+      assert set_body["result"]["taskId"] == task_id
+
+      get_body =
+        json_rpc_conn("GetTaskPushNotificationConfig", %{"task_id" => task_id, "id" => "pcfg-1"})
+        |> A2A.Plug.call(opts)
+        |> json_body()
+
+      assert get_body["result"]["url"] == "https://example.com/hook"
+      assert get_body["result"]["authentication"]["credentials"] == "s3cret"
+
+      list_body =
+        json_rpc_conn("ListTaskPushNotificationConfigs", %{"task_id" => task_id})
+        |> A2A.Plug.call(opts)
+        |> json_body()
+
+      assert [%{"id" => "pcfg-1"}] = list_body["result"]["configs"]
+
+      delete_body =
+        json_rpc_conn("DeleteTaskPushNotificationConfig", %{
+          "task_id" => task_id,
+          "id" => "pcfg-1"
+        })
+        |> A2A.Plug.call(opts)
+        |> json_body()
+
+      assert delete_body["result"] == %{}
+
+      gone_body =
+        json_rpc_conn("GetTaskPushNotificationConfig", %{"task_id" => task_id, "id" => "pcfg-1"})
+        |> A2A.Plug.call(opts)
+        |> json_body()
+
+      assert gone_body["error"]["code"] == -32_001
+    end
+
+    test "deleting a config twice stays successful", %{agent: agent} do
+      opts = push_opts(agent)
+      task_id = create_task(opts)
+      params = %{"task_id" => task_id, "id" => "pcfg-missing"}
+
+      for _ <- 1..2 do
+        body =
+          json_rpc_conn("DeleteTaskPushNotificationConfig", params)
+          |> A2A.Plug.call(opts)
+          |> json_body()
+
+        assert body["result"] == %{}
+        refute Map.has_key?(body, "error")
+      end
+    end
+
+    test "the server assigns a config id when the client omits one", %{agent: agent} do
+      opts = push_opts(agent)
+      task_id = create_task(opts)
+
+      body =
+        json_rpc_conn("CreateTaskPushNotificationConfig", %{
+          "task_id" => task_id,
+          "url" => "https://example.com/hook"
+        })
+        |> A2A.Plug.call(opts)
+        |> json_body()
+
+      assert "pcfg-" <> _ = body["result"]["id"]
+    end
+
+    test "a config for a task that does not exist is rejected", %{agent: agent} do
+      opts = push_opts(agent)
+
+      body =
+        json_rpc_conn("CreateTaskPushNotificationConfig", %{
+          "task_id" => "tsk-nonexistent",
+          "url" => "https://example.com/hook"
+        })
+        |> A2A.Plug.call(opts)
+        |> json_body()
+
+      assert body["error"]["code"] == -32_001
+    end
+
+    test "configs are scoped to their task", %{agent: agent} do
+      opts = push_opts(agent)
+      task_id = create_task(opts)
+      other_task_id = create_task(opts)
+
+      json_rpc_conn("CreateTaskPushNotificationConfig", %{
+        "task_id" => task_id,
+        "id" => "pcfg-1",
+        "url" => "https://example.com/hook"
+      })
+      |> A2A.Plug.call(opts)
+
+      body =
+        json_rpc_conn("ListTaskPushNotificationConfigs", %{"task_id" => other_task_id})
+        |> A2A.Plug.call(opts)
+        |> json_body()
+
+      assert body["result"]["configs"] == []
+    end
+
+    test "authorize_task denies a push read without leaking the task", %{agent: agent} do
+      opts = push_opts(agent, authorize_task: owner_authorizer())
+      task_id = create_task(opts, %{"owner_id" => "u-1"})
+
+      body =
+        json_rpc_conn("GetTaskPushNotificationConfig", %{"task_id" => task_id, "id" => "pcfg-1"})
+        |> A2A.Plug.put_metadata(%{"user_id" => "u-2"})
+        |> A2A.Plug.call(opts)
+        |> json_body()
+
+      assert body["error"]["code"] == -32_001
+      assert body["error"]["message"] == "Task not found"
+    end
+
+    test "each push method authorizes under its own operation atom", %{agent: agent} do
+      opts = push_opts(agent, authorize_task: recording_authorizer(self()))
+      task_id = create_task(opts)
+      flush_authorizations()
+
+      methods = [
+        {"CreateTaskPushNotificationConfig", :push_set},
+        {"GetTaskPushNotificationConfig", :push_get},
+        {"ListTaskPushNotificationConfigs", :push_list},
+        {"DeleteTaskPushNotificationConfig", :push_delete}
+      ]
+
+      for {method, operation} <- methods do
+        params = %{
+          "task_id" => task_id,
+          "id" => "pcfg-1",
+          "url" => "https://example.com/hook"
+        }
+
+        json_rpc_conn(method, params) |> A2A.Plug.call(opts)
+
+        assert_receive {:authorized, ^operation}
+      end
+    end
+  end
+
+  defp push_opts(agent, extra \\ []) do
+    plug_opts(agent, [agent_card_opts: [capabilities: %{push_notifications: true}]] ++ extra)
+  end
+
+  defp create_task(opts, metadata \\ %{}) do
+    json_rpc_conn("message/send", Map.put(message_params(), "metadata", metadata))
+    |> A2A.Plug.call(opts)
+    |> json_body()
+    |> get_in(["result", "task", "id"])
+  end
+
+  defp recording_authorizer(pid) do
+    fn operation, _task, _context ->
+      send(pid, {:authorized, operation})
+      true
+    end
+  end
+
+  defp flush_authorizations do
+    receive do
+      {:authorized, _} -> flush_authorizations()
+    after
+      0 -> :ok
+    end
+  end
+
   defp get_resp_header(conn, key) do
     for {k, v} <- conn.resp_headers, k == key, do: v
   end

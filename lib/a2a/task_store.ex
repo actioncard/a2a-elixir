@@ -61,5 +61,38 @@ defmodule A2A.TaskStore do
   """
   @callback list_all(ref(), opts :: keyword()) :: {:ok, map()}
 
-  @optional_callbacks list_all: 2
+  @doc """
+  Stores or replaces a push notification config.
+
+  Configs are identified by `id` within the scope of their `task_id`. Stores
+  that implement the push callbacks own them entirely — the agent keeps no
+  in-memory copy, so a delete here is authoritative.
+  """
+  @callback set_push_config(ref(), A2A.PushNotificationConfig.t()) ::
+              {:ok, A2A.PushNotificationConfig.t()} | {:error, term()}
+
+  @doc """
+  Retrieves a push notification config by task ID and config ID.
+  """
+  @callback get_push_config(ref(), task_id :: String.t(), config_id :: String.t()) ::
+              {:ok, A2A.PushNotificationConfig.t()} | {:error, :not_found}
+
+  @doc """
+  Lists every push notification config registered for a task.
+  """
+  @callback list_push_configs(ref(), task_id :: String.t()) ::
+              {:ok, [A2A.PushNotificationConfig.t()]}
+
+  @doc """
+  Deletes a push notification config.
+
+  Idempotent — deleting a config that is not present returns `:ok`.
+  """
+  @callback delete_push_config(ref(), task_id :: String.t(), config_id :: String.t()) :: :ok
+
+  @optional_callbacks list_all: 2,
+                      set_push_config: 2,
+                      get_push_config: 3,
+                      list_push_configs: 2,
+                      delete_push_config: 3
 end

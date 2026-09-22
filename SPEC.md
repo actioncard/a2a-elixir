@@ -78,13 +78,43 @@ and have not been re-derived; treat them as intent, not literal paths.
 
 ### Push Notifications
 
-The `tasks/pushNotificationConfig/*` methods (set, get, list, delete) currently
-return `-32003 PushNotificationNotSupportedError`. Full implementation requires:
+Config CRUD is implemented; **webhook delivery is not**. The four
+`tasks/pushNotificationConfig/*` methods (set, get, list, delete) store and
+serve configs, but no HTTP POST is ever made to a registered URL.
 
-- `PushNotificationConfig` struct (url, token, authentication)
+Because of that, the methods are gated on the declared capability and a server
+that does not opt in still returns `-32003 PushNotificationNotSupportedError`,
+exactly as before:
+
+```elixir
+{A2A.Plug, agent: MyAgent, base_url: url,
+ agent_card_opts: [capabilities: %{push_notifications: true}]}
+```
+
+Declaring the capability today therefore advertises delivery this library does
+not perform — treat it as an assertion that delivery is wired up elsewhere.
+
+Implemented:
+
+- `A2A.PushNotificationConfig` struct (id, task_id, url, token, authentication)
+- Optional `A2A.TaskStore` callbacks `set_push_config/2`, `get_push_config/3`,
+  `list_push_configs/2` and `delete_push_config/3`, with `A2A.TaskStore.ETS`
+  keeping configs in a second table so they never reach the task read paths
+- Optional `A2A.JSONRPC` handler callbacks, so a handler that implements none
+  of them keeps the old `-32003` behaviour
+- `A2A.Client` functions for all four methods
+- Configs are scoped to an existing task: registering one for an unknown task
+  returns `-32001 TaskNotFoundError`, and every operation runs through the
+  `:authorize_task` hook
+
+Still required for full support:
+
 - Webhook delivery when task state changes (HTTP POST to configured URL)
+- An `A2A.PushNotificationSender` behaviour, whose callback shape should be
+  driven by that delivery path rather than guessed ahead of it
+- `configuration.taskPushNotificationConfig` honoured on `message/send` — the
+  TCK's delivery tests register the config inline rather than through CRUD
 - Origin validation and credential transmission security
-- `AgentCapabilities.pushNotifications: true` when enabled
 
 Webhook security (informed by a2a_ex):
 
@@ -237,10 +267,14 @@ callback for task-scoped JSON-RPC operations.
 - `tasks/get` and `tasks/cancel` call the callback before returning or mutating a
   task. Denied requests return `TaskNotFoundError` so task IDs are not leaked.
 - `tasks/list` filters the returned page through the same callback.
+- The push notification config methods call it as `:push_set`, `:push_get`,
+  `:push_list` and `:push_delete`. They are distinct from `:get` so an
+  authorizer can grant read access to a task without also granting the ability
+  to rewrite the webhooks it delivers to.
 - The callback receives `(operation, task, context)` where `operation` is
-  `:get`, `:cancel`, or `:list`, and `context.metadata` contains the resolved
-  Plug metadata, including `A2A.Plug.Auth` identity under `"a2a.auth"` when that
-  plug is used.
+  `:get`, `:cancel`, `:list`, `:push_set`, `:push_get`, `:push_list`, or
+  `:push_delete`, and `context.metadata` contains the resolved Plug metadata,
+  including `A2A.Plug.Auth` identity under `"a2a.auth"` when that plug is used.
 
 Remaining hardening:
 

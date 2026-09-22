@@ -344,6 +344,108 @@ if Code.ensure_loaded?(Req) do
       end
     end
 
+    @doc """
+    Registers a push notification config for a task.
+
+    The config's `:task_id` names the task; `:id` is assigned by the server
+    when left `nil`. Returns the stored config.
+
+    ## Options
+
+    - `:headers` — additional HTTP headers
+    - `:timeout` — HTTP request timeout in ms
+
+    ## Examples
+
+        config = %A2A.PushNotificationConfig{
+          task_id: "tsk-abc123",
+          url: "https://example.com/webhook",
+          authentication: %{scheme: "Bearer", credentials: "s3cret"}
+        }
+
+        {:ok, stored} = A2A.Client.set_push_config(client, config)
+    """
+    @spec set_push_config(target(), A2A.PushNotificationConfig.t(), keyword()) ::
+            {:ok, A2A.PushNotificationConfig.t()} | {:error, term()}
+    def set_push_config(target, %A2A.PushNotificationConfig{} = config, opts \\ []) do
+      client = ensure_client(target)
+      req_opts = take_req_opts(opts)
+      {:ok, params} = A2A.JSON.encode(config)
+      body = jsonrpc_request("CreateTaskPushNotificationConfig", params)
+
+      case post(client, body, req_opts) do
+        {:ok, response} -> decode_jsonrpc_result(response, :push_notification_config)
+        {:error, _} = error -> error
+      end
+    end
+
+    @doc """
+    Retrieves a push notification config by task ID and config ID.
+
+    ## Options
+
+    - `:headers` — additional HTTP headers
+    - `:timeout` — HTTP request timeout in ms
+    """
+    @spec get_push_config(target(), String.t(), String.t(), keyword()) ::
+            {:ok, A2A.PushNotificationConfig.t()} | {:error, term()}
+    def get_push_config(target, task_id, config_id, opts \\ []) do
+      client = ensure_client(target)
+      req_opts = take_req_opts(opts)
+      params = %{"taskId" => task_id, "id" => config_id}
+      body = jsonrpc_request("GetTaskPushNotificationConfig", params)
+
+      case post(client, body, req_opts) do
+        {:ok, response} -> decode_jsonrpc_result(response, :push_notification_config)
+        {:error, _} = error -> error
+      end
+    end
+
+    @doc """
+    Lists every push notification config registered for a task.
+
+    ## Options
+
+    - `:headers` — additional HTTP headers
+    - `:timeout` — HTTP request timeout in ms
+    """
+    @spec list_push_configs(target(), String.t(), keyword()) ::
+            {:ok, [A2A.PushNotificationConfig.t()]} | {:error, term()}
+    def list_push_configs(target, task_id, opts \\ []) do
+      client = ensure_client(target)
+      req_opts = take_req_opts(opts)
+      params = %{"taskId" => task_id}
+      body = jsonrpc_request("ListTaskPushNotificationConfigs", params)
+
+      case post(client, body, req_opts) do
+        {:ok, response} -> decode_jsonrpc_result(response, :push_notification_configs)
+        {:error, _} = error -> error
+      end
+    end
+
+    @doc """
+    Deletes a push notification config. Idempotent — deleting a config that is
+    not registered succeeds.
+
+    ## Options
+
+    - `:headers` — additional HTTP headers
+    - `:timeout` — HTTP request timeout in ms
+    """
+    @spec delete_push_config(target(), String.t(), String.t(), keyword()) ::
+            :ok | {:error, term()}
+    def delete_push_config(target, task_id, config_id, opts \\ []) do
+      client = ensure_client(target)
+      req_opts = take_req_opts(opts)
+      params = %{"taskId" => task_id, "id" => config_id}
+      body = jsonrpc_request("DeleteTaskPushNotificationConfig", params)
+
+      case post(client, body, req_opts) do
+        {:ok, response} -> decode_jsonrpc_result(response, :push_delete_ack)
+        {:error, _} = error -> error
+      end
+    end
+
     # -------------------------------------------------------------------
     # Private — Request building
     # -------------------------------------------------------------------
@@ -466,6 +568,25 @@ if Code.ensure_loaded?(Req) do
     defp decode_jsonrpc_body(%{"result" => %{"task" => task}}, :task) do
       A2A.JSON.decode(task, :task)
     end
+
+    defp decode_jsonrpc_body(%{"result" => result}, :push_notification_configs) do
+      configs = Map.get(result, "configs", [])
+
+      decoded =
+        Enum.reduce_while(configs, {:ok, []}, fn raw, {:ok, acc} ->
+          case A2A.JSON.decode(raw, :push_notification_config) do
+            {:ok, config} -> {:cont, {:ok, [config | acc]}}
+            {:error, _} = error -> {:halt, error}
+          end
+        end)
+
+      case decoded do
+        {:ok, configs} -> {:ok, Enum.reverse(configs)}
+        {:error, _} = error -> error
+      end
+    end
+
+    defp decode_jsonrpc_body(%{"result" => _result}, :push_delete_ack), do: :ok
 
     defp decode_jsonrpc_body(%{"result" => result}, type) do
       A2A.JSON.decode(result, type)
