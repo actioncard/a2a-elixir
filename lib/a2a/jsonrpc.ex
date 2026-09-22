@@ -74,7 +74,38 @@ defmodule A2A.JSONRPC do
   @callback handle_list(params :: map(), context :: map()) ::
               {:ok, map()} | {:error, Error.t()}
 
-  @optional_callbacks handle_list: 2
+  @doc "Called for `tasks/pushNotificationConfig/set` requests. Optional."
+  @callback handle_set_push_config(
+              A2A.PushNotificationConfig.t(),
+              params :: map(),
+              context :: map()
+            ) :: {:ok, A2A.PushNotificationConfig.t()} | {:error, Error.t()}
+
+  @doc "Called for `tasks/pushNotificationConfig/get` requests. Optional."
+  @callback handle_get_push_config(
+              task_id :: String.t(),
+              config_id :: String.t(),
+              params :: map(),
+              context :: map()
+            ) :: {:ok, A2A.PushNotificationConfig.t()} | {:error, Error.t()}
+
+  @doc "Called for `tasks/pushNotificationConfig/list` requests. Optional."
+  @callback handle_list_push_configs(task_id :: String.t(), params :: map(), context :: map()) ::
+              {:ok, [A2A.PushNotificationConfig.t()]} | {:error, Error.t()}
+
+  @doc "Called for `tasks/pushNotificationConfig/delete` requests. Optional."
+  @callback handle_delete_push_config(
+              task_id :: String.t(),
+              config_id :: String.t(),
+              params :: map(),
+              context :: map()
+            ) :: :ok | {:error, Error.t()}
+
+  @optional_callbacks handle_list: 2,
+                      handle_set_push_config: 3,
+                      handle_get_push_config: 4,
+                      handle_list_push_configs: 3,
+                      handle_delete_push_config: 4
 
   @doc """
   Parses a JSON-RPC 2.0 request map and dispatches to the handler.
@@ -159,7 +190,7 @@ defmodule A2A.JSONRPC do
   end
 
   defp dispatch(%Request{method: "tasks/list"} = req, handler, ctx) do
-    if function_exported?(handler, :handle_list, 2) do
+    if exports?(handler, :handle_list, 2) do
       case safe_call(fn -> handler.handle_list(req.params, ctx) end) do
         {:ok, result} -> {:reply, Response.success(req.id, encode_list_result(result))}
         {:error, %Error{} = error} -> {:reply, Response.error(req.id, error)}
@@ -173,8 +204,79 @@ defmodule A2A.JSONRPC do
     {:stream, "tasks/resubscribe", req.params, req.id}
   end
 
-  defp dispatch(%Request{method: "tasks/pushNotificationConfig/" <> _} = req, _, _) do
-    {:reply, Response.error(req.id, Error.push_notification_not_supported())}
+  defp dispatch(%Request{method: "tasks/pushNotificationConfig/set"} = req, handler, ctx) do
+    if exports?(handler, :handle_set_push_config, 3) do
+      with {:ok, config} <- decode_push_config(req.params),
+           {:ok, stored} <-
+             safe_call(fn -> handler.handle_set_push_config(config, req.params, ctx) end),
+           {:ok, encoded} <- A2A.JSON.encode(stored) do
+        {:reply, Response.success(req.id, encoded)}
+      else
+        {:error, %Error{} = error} -> {:reply, Response.error(req.id, error)}
+      end
+    else
+      {:reply, Response.error(req.id, Error.push_notification_not_supported())}
+    end
+  end
+
+  defp dispatch(%Request{method: "tasks/pushNotificationConfig/get"} = req, handler, ctx) do
+    if exports?(handler, :handle_get_push_config, 4) do
+      task_id = push_task_id(req.params)
+      config_id = req.params["id"]
+
+      with {:ok, config} <-
+             safe_call(fn ->
+               handler.handle_get_push_config(task_id, config_id, req.params, ctx)
+             end),
+           {:ok, encoded} <- A2A.JSON.encode(config) do
+        {:reply, Response.success(req.id, encoded)}
+      else
+        {:error, %Error{} = error} -> {:reply, Response.error(req.id, error)}
+      end
+    else
+      {:reply, Response.error(req.id, Error.push_notification_not_supported())}
+    end
+  end
+
+  defp dispatch(%Request{method: "tasks/pushNotificationConfig/list"} = req, handler, ctx) do
+    if exports?(handler, :handle_list_push_configs, 3) do
+      task_id = push_task_id(req.params)
+
+      case safe_call(fn -> handler.handle_list_push_configs(task_id, req.params, ctx) end) do
+        {:ok, configs} ->
+          encoded = Enum.map(configs, &A2A.JSON.encode!/1)
+          {:reply, Response.success(req.id, %{"configs" => encoded})}
+
+        {:error, %Error{} = error} ->
+          {:reply, Response.error(req.id, error)}
+      end
+    else
+      {:reply, Response.error(req.id, Error.push_notification_not_supported())}
+    end
+  end
+
+  defp dispatch(%Request{method: "tasks/pushNotificationConfig/delete"} = req, handler, ctx) do
+    if exports?(handler, :handle_delete_push_config, 4) do
+      task_id = push_task_id(req.params)
+      config_id = req.params["id"]
+
+      # `safe_call/1` only understands ok/error tuples; delete answers a bare
+      # `:ok`, so normalize inside the closure to keep its rescue in play.
+      result =
+        safe_call(fn ->
+          case handler.handle_delete_push_config(task_id, config_id, req.params, ctx) do
+            :ok -> {:ok, %{}}
+            other -> other
+          end
+        end)
+
+      case result do
+        {:ok, _} -> {:reply, Response.success(req.id, %{})}
+        {:error, %Error{} = error} -> {:reply, Response.error(req.id, error)}
+      end
+    else
+      {:reply, Response.error(req.id, Error.push_notification_not_supported())}
+    end
   end
 
   defp dispatch(
@@ -190,6 +292,27 @@ defmodule A2A.JSONRPC do
   end
 
   # -- helpers ---------------------------------------------------------------
+
+  # The spec and REST binding use `taskId`; the TCK and proto clients send
+  # `task_id`. Both are accepted, as they already are for `historyLength`.
+  defp push_task_id(params), do: params["taskId"] || params["task_id"]
+
+  # v1.0 sends the config flat on params; v0.3 nests it under
+  # `pushNotificationConfig`. `taskId` always lives on params either way.
+  defp decode_push_config(params) do
+    source =
+      case Map.get(params, "pushNotificationConfig") do
+        config when is_map(config) -> config
+        _ -> params
+      end
+
+    source = Map.put(source, "taskId", push_task_id(params))
+
+    case A2A.JSON.decode(source, :push_notification_config) do
+      {:ok, _config} = ok -> ok
+      {:error, reason} -> {:error, Error.invalid_params(inspect(reason))}
+    end
+  end
 
   defp decode_message(params) do
     case A2A.JSON.decode(params["message"], :message) do
@@ -210,6 +333,13 @@ defmodule A2A.JSONRPC do
       "pageSize" => result.page_size,
       "nextPageToken" => result.next_page_token
     }
+  end
+
+  # `function_exported?/3` answers false for a module that has not been loaded
+  # yet, which under lazy loading silently downgrades a supported method to
+  # "unsupported". Force the load before asking.
+  defp exports?(handler, fun, arity) do
+    Code.ensure_loaded?(handler) and function_exported?(handler, fun, arity)
   end
 
   defp safe_call(fun) do

@@ -4,6 +4,7 @@ defmodule A2A.JSONRPCTest do
   alias A2A.JSONRPC
 
   @handler A2A.Test.Handler
+  @push_handler A2A.Test.PushHandler
 
   defp rpc(method, params \\ %{}, id \\ 1) do
     %{"jsonrpc" => "2.0", "id" => id, "method" => method, "params" => params}
@@ -129,7 +130,7 @@ defmodule A2A.JSONRPCTest do
 
   # -- unsupported methods ---------------------------------------------------
 
-  describe "push notification methods" do
+  describe "push notification methods without push callbacks" do
     test "pushNotificationConfig/set returns unsupported" do
       {:reply, response} =
         JSONRPC.handle(rpc("tasks/pushNotificationConfig/set"), @handler)
@@ -142,6 +143,145 @@ defmodule A2A.JSONRPCTest do
         JSONRPC.handle(rpc("tasks/pushNotificationConfig/get"), @handler)
 
       assert response["error"]["code"] == -32_003
+    end
+
+    test "pushNotificationConfig/list returns unsupported" do
+      {:reply, response} =
+        JSONRPC.handle(rpc("tasks/pushNotificationConfig/list"), @handler)
+
+      assert response["error"]["code"] == -32_003
+    end
+
+    test "pushNotificationConfig/delete returns unsupported" do
+      {:reply, response} =
+        JSONRPC.handle(rpc("tasks/pushNotificationConfig/delete"), @handler)
+
+      assert response["error"]["code"] == -32_003
+    end
+  end
+
+  # -- tasks/pushNotificationConfig ------------------------------------------
+
+  describe "push notification config dispatch" do
+    test "set decodes the flat snake_case form the TCK sends" do
+      params = %{
+        "task_id" => "tsk-1",
+        "id" => "pcfg-1",
+        "url" => "https://example.com/hook",
+        "authentication" => %{"scheme" => "Bearer", "credentials" => "s3cret"}
+      }
+
+      {:reply, response} =
+        JSONRPC.handle(rpc("CreateTaskPushNotificationConfig", params), @push_handler)
+
+      assert response["result"]["taskId"] == "tsk-1"
+      assert response["result"]["id"] == "pcfg-1"
+      assert response["result"]["url"] == "https://example.com/hook"
+
+      assert response["result"]["authentication"] == %{
+               "scheme" => "Bearer",
+               "credentials" => "s3cret"
+             }
+    end
+
+    test "set accepts the v0.3 nested form and plural auth schemes" do
+      params = %{
+        "taskId" => "tsk-1",
+        "pushNotificationConfig" => %{
+          "id" => "pcfg-1",
+          "url" => "https://example.com/hook",
+          "authentication" => %{"schemes" => ["Bearer"], "credentials" => "s3cret"}
+        }
+      }
+
+      {:reply, response} =
+        JSONRPC.handle(rpc("tasks/pushNotificationConfig/set", params), @push_handler)
+
+      assert response["result"]["taskId"] == "tsk-1"
+      assert response["result"]["id"] == "pcfg-1"
+      assert response["result"]["authentication"]["scheme"] == "Bearer"
+    end
+
+    test "set passes a nil id through for the handler to fill" do
+      params = %{"task_id" => "tsk-1", "url" => "https://example.com/hook"}
+
+      {:reply, response} =
+        JSONRPC.handle(rpc("tasks/pushNotificationConfig/set", params), @push_handler)
+
+      assert response["result"]["id"] == "pcfg-generated"
+    end
+
+    test "set without a url is invalid params" do
+      params = %{"task_id" => "tsk-1"}
+
+      {:reply, response} =
+        JSONRPC.handle(rpc("tasks/pushNotificationConfig/set", params), @push_handler)
+
+      assert response["error"]["code"] == -32_602
+    end
+
+    test "get returns the stored config" do
+      params = %{
+        "task_id" => A2A.Test.PushHandler.known_task(),
+        "id" => A2A.Test.PushHandler.known_config_id()
+      }
+
+      {:reply, response} =
+        JSONRPC.handle(rpc("GetTaskPushNotificationConfig", params), @push_handler)
+
+      assert response["result"]["id"] == A2A.Test.PushHandler.known_config_id()
+      assert response["result"]["url"] == "https://example.com/hook"
+    end
+
+    test "get with an unknown config id returns TaskNotFoundError" do
+      params = %{"task_id" => A2A.Test.PushHandler.known_task(), "id" => "pcfg-missing"}
+
+      {:reply, response} =
+        JSONRPC.handle(rpc("tasks/pushNotificationConfig/get", params), @push_handler)
+
+      assert response["error"]["code"] == -32_001
+    end
+
+    test "list returns configs under the configs key" do
+      params = %{"task_id" => A2A.Test.PushHandler.known_task()}
+
+      {:reply, response} =
+        JSONRPC.handle(rpc("ListTaskPushNotificationConfigs", params), @push_handler)
+
+      assert [config] = response["result"]["configs"]
+      assert config["id"] == A2A.Test.PushHandler.known_config_id()
+    end
+
+    test "list returns an empty list for a task with no configs" do
+      params = %{"task_id" => "tsk-other"}
+
+      {:reply, response} =
+        JSONRPC.handle(rpc("tasks/pushNotificationConfig/list", params), @push_handler)
+
+      assert response["result"]["configs"] == []
+    end
+
+    test "delete succeeds and repeating it stays successful" do
+      params = %{
+        "task_id" => A2A.Test.PushHandler.known_task(),
+        "id" => A2A.Test.PushHandler.known_config_id()
+      }
+
+      request = rpc("DeleteTaskPushNotificationConfig", params)
+
+      {:reply, first} = JSONRPC.handle(request, @push_handler)
+      {:reply, second} = JSONRPC.handle(request, @push_handler)
+
+      assert first["result"] == %{}
+      assert second["result"] == %{}
+      refute Map.has_key?(second, "error")
+    end
+
+    test "an unknown pushNotificationConfig sub-method is method_not_found" do
+      {:reply, response} =
+        JSONRPC.handle(rpc("tasks/pushNotificationConfig/purge"), @push_handler)
+
+      assert response["error"]["code"] == -32_601
     end
   end
 

@@ -248,7 +248,8 @@ artifacts.
 
 Key A2A spec features not yet covered:
 
-- **Push notifications** — webhook delivery on task state changes
+- **Push notifications** — webhook delivery on task state changes (config
+  CRUD is implemented; nothing POSTs to a registered URL yet)
 - **Authenticated extended cards** — per-client capability disclosure
 - **REST / gRPC transports** — only JSON-RPC is supported
 - **Task resubscribe** — reconnecting to active SSE streams

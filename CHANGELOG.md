@@ -9,6 +9,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Push notification config CRUD: the four `tasks/pushNotificationConfig/*`
+  methods (and their v1.0 `CreateTaskPushNotificationConfig` /
+  `GetTaskPushNotificationConfig` / `ListTaskPushNotificationConfigs` /
+  `DeleteTaskPushNotificationConfig` names) now store, serve and delete
+  configs instead of always returning `-32003`. Adds the
+  `A2A.PushNotificationConfig` struct, four optional `A2A.TaskStore`
+  callbacks with an `A2A.TaskStore.ETS` implementation, four optional
+  `A2A.JSONRPC` handler callbacks, and `A2A.Client.set_push_config/3`,
+  `get_push_config/4`, `list_push_configs/3` and `delete_push_config/4`.
+
+  **Webhook delivery is not implemented** — nothing POSTs to a registered
+  URL. The methods are therefore gated on the declared capability, so a
+  server that does not opt in behaves exactly as before:
+
+  ```elixir
+  {A2A.Plug, agent: MyAgent, base_url: url,
+   agent_card_opts: [capabilities: %{push_notifications: true}]}
+  ```
+
+  A handler that implements none of the new callbacks also keeps the old
+  `-32003`. Requests are accepted in both the v1.0 flat form (`task_id`
+  alongside the config fields, as the TCK sends) and the v0.3 nested form
+  (`taskId` plus `pushNotificationConfig`), and `authentication` is read
+  from either a singular `scheme` or the spec's plural `schemes` array.
+  Registering a config for a task that does not exist returns `-32001
+  TaskNotFoundError`, and deletes are idempotent.
+- `:authorize_task` is now called for push notification config operations,
+  under the new `:push_set`, `:push_get`, `:push_list` and `:push_delete`
+  operation atoms. They are distinct from `:get` so an authorizer can grant
+  read access to a task without also granting the ability to rewrite the
+  webhooks it delivers to — push configs carry credentials, so an
+  unauthorized read would leak them. An authorizer that pattern-matches
+  strictly on `:get`/`:cancel`/`:list` needs a clause for the new atoms;
+  the hook has not appeared in a release yet, so nothing published breaks.
 - Caching headers on the agent card endpoint per A2A v1.0 §8.6: a quoted
   `sha256` `ETag` computed from the response body, a `Last-Modified` in RFC
   7231 IMF-fixdate form, and `Cache-Control: public, max-age=300`. The ETag
@@ -49,6 +83,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Optional callback detection no longer depends on the module happening to be
+  loaded. `A2A.JSONRPC` and `A2A.Agent.State` called `function_exported?/3`
+  without `Code.ensure_loaded?/1`, which answers `false` for a module that has
+  not been loaded yet — so under lazy loading a handler implementing
+  `handle_list/2`, or a task store implementing `list_all/2`, could be treated
+  as implementing neither.
 - `message/send` now honours `configuration.historyLength`, truncating the
   returned task's history the same way `tasks/get` already did. It was
   previously ignored, so the full history came back regardless.

@@ -5,6 +5,11 @@ defmodule A2A.TaskStore.ETS do
   Uses a named ETS table for storage. The store reference is the table name atom.
   Suitable for single-node, concurrent access.
 
+  Push notification configs are kept in a second table, `:"\#{name}_push"`,
+  created alongside the first. They cannot share the task table: `list/2` and
+  `list_all/2` scan every row and treat it as a task, so a config row would
+  crash both.
+
   ## Usage
 
       {:ok, _pid} = A2A.TaskStore.ETS.start_link(name: :my_tasks)
@@ -70,11 +75,48 @@ defmodule A2A.TaskStore.ETS do
     |> A2A.Task.Filter.apply(opts)
   end
 
+  # --- Push notification config callbacks ---
+
+  @impl A2A.TaskStore
+  def set_push_config(table, %A2A.PushNotificationConfig{} = config) do
+    :ets.insert(push_table(table), {{config.task_id, config.id}, config})
+    {:ok, config}
+  end
+
+  @impl A2A.TaskStore
+  def get_push_config(table, task_id, config_id) do
+    key = {task_id, config_id}
+
+    case :ets.lookup(push_table(table), key) do
+      [{^key, config}] -> {:ok, config}
+      [] -> {:error, :not_found}
+    end
+  end
+
+  @impl A2A.TaskStore
+  def list_push_configs(table, task_id) do
+    configs =
+      push_table(table)
+      |> :ets.match_object({{task_id, :_}, :_})
+      |> Enum.map(fn {_key, config} -> config end)
+
+    {:ok, configs}
+  end
+
+  @impl A2A.TaskStore
+  def delete_push_config(table, task_id, config_id) do
+    :ets.delete(push_table(table), {task_id, config_id})
+    :ok
+  end
+
   # --- GenServer callbacks ---
 
   @impl GenServer
   def init(name) do
     table = :ets.new(name, [:named_table, :public, :set, read_concurrency: true])
+    :ets.new(push_table(name), [:named_table, :public, :set, read_concurrency: true])
     {:ok, table}
   end
+
+  defp push_table(name), do: :"#{name}_push"
 end

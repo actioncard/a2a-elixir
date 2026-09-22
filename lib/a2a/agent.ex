@@ -358,6 +358,24 @@ defmodule A2A.Agent do
         {:reply, __MODULE__.agent_card(), state}
       end
 
+      def handle_call({:set_push_config, config}, _from, state) do
+        {state, result} = A2A.Agent.State.put_push_config(state, config)
+        {:reply, result, state}
+      end
+
+      def handle_call({:get_push_config, task_id, config_id}, _from, state) do
+        {:reply, A2A.Agent.State.get_push_config(state, task_id, config_id), state}
+      end
+
+      def handle_call({:list_push_configs, task_id}, _from, state) do
+        {:reply, A2A.Agent.State.list_push_configs(state, task_id), state}
+      end
+
+      def handle_call({:delete_push_config, task_id, config_id}, _from, state) do
+        {state, result} = A2A.Agent.State.delete_push_config(state, task_id, config_id)
+        {:reply, result, state}
+      end
+
       @impl GenServer
       def handle_cast({:stream_done, task_id, parts}, state) do
         case A2A.Agent.State.get_task(state, task_id) do

@@ -413,4 +413,60 @@ defmodule A2A.ClientTest do
       assert {:ok, %A2A.Task{}} = Client.send_message(client, "Hello!")
     end
   end
+
+  # -------------------------------------------------------------------
+  # Push notification configs — driven against the real A2A.Plug
+  # -------------------------------------------------------------------
+
+  describe "push notification configs" do
+    setup do
+      agent = start_supervised!({A2A.Test.EchoAgent, [name: nil]})
+
+      plug_opts =
+        A2A.Plug.init(
+          agent: agent,
+          base_url: "http://localhost",
+          agent_card_opts: [capabilities: %{push_notifications: true}]
+        )
+
+      client =
+        Client.new("http://localhost", plug: fn conn -> A2A.Plug.call(conn, plug_opts) end)
+
+      {:ok, task} = Client.send_message(client, "hello")
+
+      %{client: client, task_id: task.id}
+    end
+
+    test "round-trips a config through the server", %{client: client, task_id: task_id} do
+      config = %A2A.PushNotificationConfig{
+        task_id: task_id,
+        url: "https://example.com/hook",
+        authentication: %{scheme: "Bearer", credentials: "s3cret"}
+      }
+
+      assert {:ok, stored} = Client.set_push_config(client, config)
+      assert stored.task_id == task_id
+      assert "pcfg-" <> _ = stored.id
+      assert stored.authentication == %{scheme: "Bearer", credentials: "s3cret"}
+
+      assert {:ok, ^stored} = Client.get_push_config(client, task_id, stored.id)
+      assert {:ok, [^stored]} = Client.list_push_configs(client, task_id)
+
+      assert :ok = Client.delete_push_config(client, task_id, stored.id)
+      assert {:ok, []} = Client.list_push_configs(client, task_id)
+    end
+
+    test "getting a config that is not registered errors", %{client: client, task_id: task_id} do
+      assert {:error, %Error{code: -32_001}} =
+               Client.get_push_config(client, task_id, "pcfg-missing")
+    end
+
+    test "deleting a config that is not registered succeeds", %{
+      client: client,
+      task_id: task_id
+    } do
+      assert :ok = Client.delete_push_config(client, task_id, "pcfg-missing")
+      assert :ok = Client.delete_push_config(client, task_id, "pcfg-missing")
+    end
+  end
 end

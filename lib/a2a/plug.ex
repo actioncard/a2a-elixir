@@ -41,8 +41,12 @@ if Code.ensure_loaded?(Plug) do
       `%{"env" => "prod"}`. Overridden per-request by `put_metadata/2`.
     - `:authorize_task` — optional authorization callback for task-scoped
       operations. Called as `(operation, task, context)` before returning,
-      canceling, or listing tasks. Denied `tasks/get` and `tasks/cancel`
-      requests return `TaskNotFoundError` so task IDs are not leaked.
+      canceling, or listing tasks, and before any push notification config
+      operation. `operation` is one of `:get`, `:cancel`, `:list`,
+      `:push_set`, `:push_get`, `:push_list`, or `:push_delete` — the push
+      operations are distinct so an authorizer can grant read access to a
+      task without also granting the ability to rewrite its webhooks.
+      Denied requests return `TaskNotFoundError` so task IDs are not leaked.
     - `:extensions` — list of `A2A.Extension` modules (or `{module, opts}`
       tuples) declaring protocol extensions this server supports. Required
       extensions are validated against the client's `A2A-Extensions`
@@ -262,6 +266,12 @@ if Code.ensure_loaded?(Plug) do
       |> Map.get(:streaming, false)
     end
 
+    defp push_notifications_declared?(opts) do
+      opts.agent_card_opts
+      |> Keyword.get(:capabilities, %{})
+      |> Map.get(:push_notifications, false)
+    end
+
     # -- JSON-RPC dispatch -----------------------------------------------------
 
     defp handle_json_rpc(conn, opts) do
@@ -460,12 +470,73 @@ if Code.ensure_loaded?(Plug) do
       end
     end
 
+    @impl A2A.JSONRPC
+    def handle_set_push_config(config, params, %{agent: agent, opts: plug_opts}) do
+      with :ok <- push_declared(plug_opts),
+           {:ok, _task} <-
+             authorized_task(agent, config.task_id, :push_set, params, plug_opts) do
+        config = %{config | id: config.id || A2A.ID.generate("pcfg")}
+
+        case GenServer.call(agent, {:set_push_config, config}) do
+          {:ok, _config} = ok -> ok
+          {:error, reason} -> {:error, Error.internal_error(inspect(reason))}
+        end
+      end
+    end
+
+    @impl A2A.JSONRPC
+    def handle_get_push_config(task_id, config_id, params, %{agent: agent, opts: plug_opts}) do
+      with :ok <- push_declared(plug_opts),
+           {:ok, _task} <- authorized_task(agent, task_id, :push_get, params, plug_opts) do
+        case GenServer.call(agent, {:get_push_config, task_id, config_id}) do
+          {:ok, _config} = ok ->
+            ok
+
+          {:error, :not_found} ->
+            {:error, Error.task_not_found("Push notification config not found")}
+        end
+      end
+    end
+
+    @impl A2A.JSONRPC
+    def handle_list_push_configs(task_id, params, %{agent: agent, opts: plug_opts}) do
+      with :ok <- push_declared(plug_opts),
+           {:ok, _task} <- authorized_task(agent, task_id, :push_list, params, plug_opts) do
+        GenServer.call(agent, {:list_push_configs, task_id})
+      end
+    end
+
+    @impl A2A.JSONRPC
+    def handle_delete_push_config(task_id, config_id, params, %{agent: agent, opts: plug_opts}) do
+      with :ok <- push_declared(plug_opts),
+           {:ok, _task} <- authorized_task(agent, task_id, :push_delete, params, plug_opts) do
+        GenServer.call(agent, {:delete_push_config, task_id, config_id})
+      end
+    end
+
     # -- Helpers ---------------------------------------------------------------
 
     defp fetch_task(agent, task_id) do
       case GenServer.call(agent, {:get_task, task_id}) do
         {:ok, task} -> {:ok, task}
         {:error, :not_found} -> {:error, :not_found}
+      end
+    end
+
+    defp push_declared(plug_opts) do
+      if push_notifications_declared?(plug_opts) do
+        :ok
+      else
+        {:error, Error.push_notification_not_supported()}
+      end
+    end
+
+    # A config attached to a task that does not exist can never fire, so the
+    # lookup is part of the contract rather than a convenience.
+    defp authorized_task(agent, task_id, operation, params, plug_opts) do
+      case fetch_task(agent, task_id) do
+        {:ok, task} -> authorize_task(operation, task, params, plug_opts)
+        {:error, :not_found} -> {:error, Error.task_not_found()}
       end
     end
 
