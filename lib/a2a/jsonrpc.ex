@@ -15,7 +15,8 @@ defmodule A2A.JSONRPC do
 
         @impl true
         def handle_send(message, params) do
-          # process the message, return {:ok, task} or {:error, error}
+          # process the message, return {:ok, task}, {:ok, message}, or
+          # {:error, error} — `SendMessageResponse` is a Task/Message oneof
         end
 
         @impl true
@@ -60,7 +61,7 @@ defmodule A2A.JSONRPC do
 
   @doc "Called for `message/send` and `message/stream` requests."
   @callback handle_send(A2A.Message.t(), params :: map(), context :: map()) ::
-              {:ok, A2A.Task.t()} | {:error, Error.t()}
+              {:ok, A2A.Task.t() | A2A.Message.t()} | {:error, Error.t()}
 
   @doc "Called for `tasks/get` requests."
   @callback handle_get(task_id :: String.t(), params :: map(), context :: map()) ::
@@ -136,14 +137,10 @@ defmodule A2A.JSONRPC do
     history_length = Request.history_length(req.params["configuration"] || %{})
 
     with {:ok, message} <- decode_message(req.params),
-         {:ok, task} <-
+         {:ok, result} <-
            safe_call(fn -> handler.handle_send(message, req.params, ctx) end),
-         task =
-           task
-           |> A2A.Task.truncate_history(history_length)
-           |> A2A.Task.strip_stream_metadata(),
-         {:ok, encoded} <- A2A.JSON.encode(task) do
-      {:reply, Response.success(req.id, %{"task" => encoded})}
+         {:ok, encoded} <- encode_send_result(result, history_length) do
+      {:reply, Response.success(req.id, encoded)}
     else
       {:error, %Error{} = error} -> {:reply, Response.error(req.id, error)}
     end
@@ -318,6 +315,24 @@ defmodule A2A.JSONRPC do
     case A2A.JSON.decode(params["message"], :message) do
       {:ok, _message} = ok -> ok
       {:error, reason} -> {:error, Error.invalid_params(inspect(reason))}
+    end
+  end
+
+  # `SendMessageResponse` is a Task/Message oneof. `historyLength` and the
+  # `:stream` metadata key are task-only — a Message has neither field.
+  defp encode_send_result(%A2A.Task{} = task, history_length) do
+    with {:ok, encoded} <-
+           task
+           |> A2A.Task.truncate_history(history_length)
+           |> A2A.Task.strip_stream_metadata()
+           |> A2A.JSON.encode() do
+      {:ok, %{"task" => encoded}}
+    end
+  end
+
+  defp encode_send_result(%A2A.Message{} = message, _history_length) do
+    with {:ok, encoded} <- A2A.JSON.encode(message) do
+      {:ok, %{"message" => encoded}}
     end
   end
 

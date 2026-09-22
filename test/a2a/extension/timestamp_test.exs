@@ -51,6 +51,29 @@ defmodule A2A.Extension.TimestampTest do
     assert stamp["completed_at"] <= after_ms
   end
 
+  test "stamps a bare Message response" do
+    agent = start_supervised!({A2A.Test.MessageAgent, [name: nil]})
+
+    plug_opts =
+      A2A.Plug.init(
+        agent: agent,
+        base_url: "http://localhost:4000",
+        extensions: [Timestamp]
+      )
+
+    client =
+      Client.new("http://localhost:4000",
+        extensions: [Timestamp],
+        plug: fn conn -> A2A.Plug.call(conn, plug_opts) end
+      )
+
+    assert {:ok, %A2A.Message{} = message} = Client.send_message(client, "hi")
+
+    stamp = message.metadata[Timestamp.uri()]
+    assert is_integer(stamp["received_at"])
+    assert is_integer(stamp["completed_at"])
+  end
+
   test "agent card advertises the extension", %{agent: agent} do
     opts =
       A2A.Plug.init(

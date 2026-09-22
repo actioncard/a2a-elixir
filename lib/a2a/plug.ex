@@ -412,15 +412,18 @@ if Code.ensure_loaded?(Plug) do
           |> Keyword.put(:extensions, A2A.Extension.to_context_map(activations))
 
         case A2A.call(agent, message, call_opts) do
-          {:ok, task} ->
-            {:ok, task, _activations} = A2A.Extension.run_response(activations, task, params)
-            {:ok, task}
+          {:ok, result} ->
+            {:ok, result, _activations} = A2A.Extension.run_response(activations, result, params)
+            {:ok, result}
 
           {:error, :not_found} ->
             {:error, Error.task_not_found()}
 
           {:error, :not_continuable} ->
             {:error, Error.unsupported_operation()}
+
+          {:error, :message_on_task} ->
+            {:error, Error.invalid_agent_response("Message reply to a task-scoped request")}
 
           {:error, reason} ->
             {:error, Error.internal_error(inspect(reason))}

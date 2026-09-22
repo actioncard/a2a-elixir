@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `{:message, parts}` agent reply — `message/send` can now answer with a bare
+  `Message` instead of a `Task`, the other half of the spec's
+  `SendMessageResponse` oneof (`DM-MSG-001`). The runtime discards the task it
+  built for the turn: nothing is persisted, `tasks/get` will not find it, and
+  the JSON-RPC result is `{"message": …}` rather than `{"task": …}`. The
+  message inherits the request's `contextId` and carries no `taskId`.
+
+  On `message/stream` the same reply produces a single SSE event carrying the
+  message, with no task snapshot and no final status event.
+
+  Return types widen rather than change — `A2A.call/3`, the generated
+  `YourAgent.call/3`, `A2A.Client.send_message/3` and the
+  `A2A.JSONRPC.handle_send/3` callback are now
+  `{:ok, A2A.Task.t() | A2A.Message.t()}`, `A2A.stream/3` gains an
+  `{:ok, A2A.Message.t()}` result, and `A2A.Extension.handle_response/3`
+  accepts either struct. Existing agents are unaffected: nothing returns a
+  `Message` unless an agent opts in.
+
+  Returning `{:message, parts}` while continuing an existing task (`task_id:`)
+  is rejected with `-32006 InvalidAgentResponseError` — the client holds a task
+  id, so a bare Message would strand the task and drop the turn from its
+  history.
+
 - Push notification config CRUD: the four `tasks/pushNotificationConfig/*`
   methods (and their v1.0 `CreateTaskPushNotificationConfig` /
   `GetTaskPushNotificationConfig` / `ListTaskPushNotificationConfigs` /

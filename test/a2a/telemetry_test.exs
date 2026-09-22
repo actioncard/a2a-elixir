@@ -80,6 +80,20 @@ defmodule A2A.TelemetryTest do
       assert_received {:telemetry, [:a2a, :agent, :call, :stop], %{duration: _},
                        %{agent: ^pid, status: :failed}}
     end
+
+    test "reports message_id and no task_id for a bare message reply", %{attach: attach} do
+      attach.([:a2a, :agent, :call, :stop], "call-stop-msg")
+
+      {:ok, pid} = A2A.Test.MessageAgent.start_link(name: nil)
+      {:ok, reply} = A2A.call(pid, "hi")
+      message_id = reply.message_id
+
+      assert_received {:telemetry, [:a2a, :agent, :call, :stop], %{duration: _},
+                       %{agent: ^pid, message_id: ^message_id, streaming: false} = meta}
+
+      refute Map.has_key?(meta, :task_id)
+      refute Map.has_key?(meta, :status)
+    end
   end
 
   describe "[:a2a, :agent, :message] span" do
@@ -109,6 +123,21 @@ defmodule A2A.TelemetryTest do
                        %{reply_type: :stream, task_id: ^task_id}}
 
       Stream.run(stream)
+    end
+
+    # The task_id here is the transient task the runtime built for the
+    # callback and then discarded — it is never persisted.
+    test "reports :message reply_type for a discarded task", %{attach: attach} do
+      attach.([:a2a, :agent, :message, :stop], "msg-stop-message")
+
+      {:ok, pid} = A2A.Test.MessageAgent.start_link(name: nil)
+      {:ok, %A2A.Message{}} = A2A.call(pid, "hi")
+
+      assert_received {:telemetry, [:a2a, :agent, :message, :stop], _,
+                       %{reply_type: :message, task_id: task_id}}
+
+      assert is_binary(task_id)
+      assert {:error, :not_found} = A2A.Test.MessageAgent.get_task(pid, task_id)
     end
 
     test "reports :input_required reply_type", %{attach: attach} do

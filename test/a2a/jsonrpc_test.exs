@@ -36,6 +36,30 @@ defmodule A2A.JSONRPCTest do
       assert msg["role"] == "ROLE_USER"
     end
 
+    test "message reply is wrapped in a message result" do
+      params = put_in(message_params()["message"]["messageId"], "msg-bare")
+      {:reply, response} = JSONRPC.handle(rpc("message/send", params), @handler)
+
+      assert %{"message" => msg} = response["result"]
+      refute Map.has_key?(response["result"], "task")
+      assert msg["role"] == "ROLE_AGENT"
+      assert msg["parts"] == [%{"text" => "bare reply"}]
+      assert is_binary(msg["messageId"])
+      refute Map.has_key?(msg, "kind")
+      refute Map.has_key?(msg, "taskId")
+    end
+
+    test "historyLength does not apply to a message reply" do
+      params =
+        message_params()
+        |> put_in(["message", "messageId"], "msg-bare")
+        |> Map.put("configuration", %{"historyLength" => 1})
+
+      {:reply, response} = JSONRPC.handle(rpc("message/send", params), @handler)
+
+      assert %{"message" => %{"parts" => [%{"text" => "bare reply"}]}} = response["result"]
+    end
+
     test "bad message returns invalid_params" do
       params = %{"message" => "not a map"}
       {:reply, response} = JSONRPC.handle(rpc("message/send", params), @handler)

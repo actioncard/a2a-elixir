@@ -165,8 +165,11 @@ if Code.ensure_loaded?(Req) do
     @doc """
     Sends a message to an agent via `SendMessage`.
 
-    Returns `{:ok, task}` on success or `{:error, reason}` on failure.
-    The message can be a string, an `%A2A.Message{}`, or a list of parts.
+    Returns `{:ok, task}` on success, or `{:ok, message}` when the agent
+    answers out-of-band with a bare `%A2A.Message{}` — `SendMessageResponse`
+    is a Task/Message oneof, so match on the struct to tell them apart.
+    Returns `{:error, reason}` on failure. The message can be a string, an
+    `%A2A.Message{}`, or a list of parts.
 
     ## Options
 
@@ -183,7 +186,7 @@ if Code.ensure_loaded?(Req) do
         {:ok, task} = A2A.Client.send_message(client, "More info", task_id: task.id)
     """
     @spec send_message(target(), A2A.Message.t() | String.t(), keyword()) ::
-            {:ok, A2A.Task.t()} | {:error, term()}
+            {:ok, A2A.Task.t() | A2A.Message.t()} | {:error, term()}
     def send_message(target, message, opts \\ []) do
       client = ensure_client(target)
       {params, req_opts} = build_send_params(message, opts)
@@ -567,6 +570,10 @@ if Code.ensure_loaded?(Req) do
     # SendMessageResult wrapper: {"task": Task} or {"message": Message}
     defp decode_jsonrpc_body(%{"result" => %{"task" => task}}, :task) do
       A2A.JSON.decode(task, :task)
+    end
+
+    defp decode_jsonrpc_body(%{"result" => %{"message" => message}}, :task) do
+      A2A.JSON.decode(message, :message)
     end
 
     defp decode_jsonrpc_body(%{"result" => result}, :push_notification_configs) do
