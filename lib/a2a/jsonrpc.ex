@@ -2,33 +2,45 @@ defmodule A2A.JSONRPC do
   @moduledoc """
   Transport-agnostic JSON-RPC 2.0 dispatch layer for the A2A protocol.
 
-  Defines a handler behaviour with three callbacks and a `handle/2` function
-  that parses JSON-RPC envelopes, validates params, and dispatches to the
-  handler module.
+  Defines a handler behaviour and a `handle/3` function that parses JSON-RPC
+  envelopes, validates params, and dispatches to the handler module.
 
   ## Handler behaviour
 
-  Implement the three callbacks to handle A2A methods:
+  Three callbacks are required — every A2A server answers these methods:
 
       defmodule MyHandler do
         @behaviour A2A.JSONRPC
 
         @impl true
-        def handle_send(message, params) do
+        def handle_send(message, params, context) do
           # process the message, return {:ok, task}, {:ok, message}, or
           # {:error, error} — `SendMessageResponse` is a Task/Message oneof
         end
 
         @impl true
-        def handle_get(task_id, params) do
+        def handle_get(task_id, params, context) do
           # look up the task
         end
 
         @impl true
-        def handle_cancel(task_id, params) do
+        def handle_cancel(task_id, params, context) do
           # cancel the task
         end
       end
+
+  Five more are optional, and each has a defined answer when absent:
+
+  - `c:handle_list/2` serves `tasks/list`. Without it that method answers
+    `-32601`, method not found.
+  - `c:handle_set_push_config/3`, `c:handle_get_push_config/4`,
+    `c:handle_list_push_configs/3` and `c:handle_delete_push_config/4` serve
+    the four `tasks/pushNotificationConfig/*` methods. Without them those
+    answer `-32003`, push notifications not supported.
+
+  Presence is checked per request with `Code.ensure_loaded?/1` and
+  `function_exported?/3`, so a handler implementing none of the optional
+  callbacks behaves exactly as it did before they existed.
 
   ## Dispatching
 
@@ -36,6 +48,9 @@ defmodule A2A.JSONRPC do
         {:reply, response_map} -> send_json(response_map)
         {:stream, method, params, id} -> start_sse(method, params, id)
       end
+
+  The third argument to `handle/3` is a context map, threaded unchanged to
+  every callback, which transports use to pass per-request data.
   """
 
   alias A2A.JSONRPC.{Error, Request, Response}

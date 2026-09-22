@@ -21,9 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Return types widen rather than change — `A2A.call/3`, the generated
   `YourAgent.call/3`, `A2A.Client.send_message/3` and the
-  `A2A.JSONRPC.handle_send/3` callback are now
+  `c:A2A.JSONRPC.handle_send/3` callback are now
   `{:ok, A2A.Task.t() | A2A.Message.t()}`, `A2A.stream/3` gains an
-  `{:ok, A2A.Message.t()}` result, and `A2A.Extension.handle_response/3`
+  `{:ok, A2A.Message.t()}` result, and `c:A2A.Extension.handle_response/3`
   accepts either struct. Existing agents are unaffected: nothing returns a
   `Message` unless an agent opts in.
 
