@@ -48,7 +48,7 @@ defmodule A2A.TelemetryTest do
                        %{agent: ^pid, streaming: false}}
 
       assert_received {:telemetry, [:a2a, :agent, :call, :stop], %{duration: duration},
-                       %{task_id: task_id, status: :completed, streaming: false}}
+                       %{agent: ^pid, task_id: task_id, status: :completed, streaming: false}}
 
       assert is_integer(duration)
       assert task_id == task.id
@@ -65,7 +65,7 @@ defmodule A2A.TelemetryTest do
                        %{agent: ^pid, streaming: true}}
 
       assert_received {:telemetry, [:a2a, :agent, :call, :stop], %{duration: _},
-                       %{streaming: true, task_id: _}}
+                       %{agent: ^pid, streaming: true, task_id: _}}
 
       # Consume stream to clean up
       Stream.run(stream)
@@ -78,7 +78,7 @@ defmodule A2A.TelemetryTest do
       {:ok, _task} = A2A.call(pid, "fail")
 
       assert_received {:telemetry, [:a2a, :agent, :call, :stop], %{duration: _},
-                       %{status: :failed}}
+                       %{agent: ^pid, status: :failed}}
     end
   end
 
@@ -89,23 +89,24 @@ defmodule A2A.TelemetryTest do
 
       {:ok, pid} = A2A.Test.EchoAgent.start_link(name: nil)
       {:ok, task} = A2A.call(pid, "hi")
+      task_id = task.id
 
       assert_received {:telemetry, [:a2a, :agent, :message, :start], %{system_time: _},
-                       %{agent: A2A.Test.EchoAgent, task_id: _, context_id: _}}
+                       %{agent: A2A.Test.EchoAgent, task_id: ^task_id, context_id: _}}
 
       assert_received {:telemetry, [:a2a, :agent, :message, :stop], %{duration: _},
-                       %{agent: A2A.Test.EchoAgent, reply_type: :reply, task_id: task_id}}
-
-      assert task_id == task.id
+                       %{agent: A2A.Test.EchoAgent, reply_type: :reply, task_id: ^task_id}}
     end
 
     test "reports :stream reply_type", %{attach: attach} do
       attach.([:a2a, :agent, :message, :stop], "msg-stop-stream")
 
       {:ok, pid} = A2A.Test.StreamAgent.start_link(name: nil)
-      {:ok, _task, stream} = A2A.stream(pid, "go")
+      {:ok, task, stream} = A2A.stream(pid, "go")
+      task_id = task.id
 
-      assert_received {:telemetry, [:a2a, :agent, :message, :stop], _, %{reply_type: :stream}}
+      assert_received {:telemetry, [:a2a, :agent, :message, :stop], _,
+                       %{reply_type: :stream, task_id: ^task_id}}
 
       Stream.run(stream)
     end
@@ -114,19 +115,22 @@ defmodule A2A.TelemetryTest do
       attach.([:a2a, :agent, :message, :stop], "msg-stop-ir")
 
       {:ok, pid} = A2A.Test.MultiTurnAgent.start_link(name: nil)
-      {:ok, _task} = A2A.call(pid, "order pizza")
+      {:ok, task} = A2A.call(pid, "order pizza")
+      task_id = task.id
 
       assert_received {:telemetry, [:a2a, :agent, :message, :stop], _,
-                       %{reply_type: :input_required}}
+                       %{reply_type: :input_required, task_id: ^task_id}}
     end
 
     test "reports :error reply_type", %{attach: attach} do
       attach.([:a2a, :agent, :message, :stop], "msg-stop-err")
 
       {:ok, pid} = A2A.Test.ErrorAgent.start_link(name: nil)
-      {:ok, _task} = A2A.call(pid, "fail")
+      {:ok, task} = A2A.call(pid, "fail")
+      task_id = task.id
 
-      assert_received {:telemetry, [:a2a, :agent, :message, :stop], _, %{reply_type: :error}}
+      assert_received {:telemetry, [:a2a, :agent, :message, :stop], _,
+                       %{reply_type: :error, task_id: ^task_id}}
     end
   end
 
@@ -155,15 +159,14 @@ defmodule A2A.TelemetryTest do
 
       {:ok, pid} = A2A.Test.EchoAgent.start_link(name: nil)
       {:ok, task} = A2A.call(pid, "hi")
+      task_id = task.id
 
       # submitted -> working -> completed
       assert_received {:telemetry, [:a2a, :task, :transition], %{system_time: _},
-                       %{task_id: task_id, from: :submitted, to: :working}}
+                       %{task_id: ^task_id, from: :submitted, to: :working}}
 
       assert_received {:telemetry, [:a2a, :task, :transition], %{system_time: _},
                        %{task_id: ^task_id, from: :working, to: :completed}}
-
-      assert task_id == task.id
     end
 
     test "fires for multi-turn transitions", %{attach: attach} do
@@ -171,22 +174,23 @@ defmodule A2A.TelemetryTest do
 
       {:ok, pid} = A2A.Test.MultiTurnAgent.start_link(name: nil)
       {:ok, task} = A2A.call(pid, "order pizza")
+      task_id = task.id
 
       # submitted -> working -> input_required
       assert_received {:telemetry, [:a2a, :task, :transition], _,
-                       %{task_id: _, from: :submitted, to: :working}}
+                       %{task_id: ^task_id, from: :submitted, to: :working}}
 
       assert_received {:telemetry, [:a2a, :task, :transition], _,
-                       %{task_id: _, from: :working, to: :input_required}}
+                       %{task_id: ^task_id, from: :working, to: :input_required}}
 
       # Continue — working -> completed
-      {:ok, _task} = A2A.call(pid, "large", task_id: task.id)
+      {:ok, _task} = A2A.call(pid, "large", task_id: task_id)
 
       assert_received {:telemetry, [:a2a, :task, :transition], _,
-                       %{task_id: _, from: :input_required, to: :working}}
+                       %{task_id: ^task_id, from: :input_required, to: :working}}
 
       assert_received {:telemetry, [:a2a, :task, :transition], _,
-                       %{task_id: _, from: :working, to: :completed}}
+                       %{task_id: ^task_id, from: :working, to: :completed}}
     end
 
     test "fires for cancel transition", %{attach: attach} do
@@ -194,25 +198,33 @@ defmodule A2A.TelemetryTest do
 
       {:ok, pid} = CancelableAgent.start_link(name: nil)
       {:ok, task} = A2A.call(pid, "hi")
+      task_id = task.id
 
       # Drain working + input_required transitions
-      assert_received {:telemetry, [:a2a, :task, :transition], _, %{to: :working}}
-      assert_received {:telemetry, [:a2a, :task, :transition], _, %{to: :input_required}}
-
-      :ok = GenServer.call(pid, {:cancel, task.id})
+      assert_received {:telemetry, [:a2a, :task, :transition], _,
+                       %{task_id: ^task_id, to: :working}}
 
       assert_received {:telemetry, [:a2a, :task, :transition], _,
-                       %{from: :input_required, to: :canceled}}
+                       %{task_id: ^task_id, to: :input_required}}
+
+      :ok = GenServer.call(pid, {:cancel, task_id})
+
+      assert_received {:telemetry, [:a2a, :task, :transition], _,
+                       %{task_id: ^task_id, from: :input_required, to: :canceled}}
     end
 
     test "fires for error transition", %{attach: attach} do
       attach.([:a2a, :task, :transition], "transition-err")
 
       {:ok, pid} = A2A.Test.ErrorAgent.start_link(name: nil)
-      {:ok, _task} = A2A.call(pid, "fail")
+      {:ok, task} = A2A.call(pid, "fail")
+      task_id = task.id
 
-      assert_received {:telemetry, [:a2a, :task, :transition], _, %{to: :working}}
-      assert_received {:telemetry, [:a2a, :task, :transition], _, %{to: :failed}}
+      assert_received {:telemetry, [:a2a, :task, :transition], _,
+                       %{task_id: ^task_id, to: :working}}
+
+      assert_received {:telemetry, [:a2a, :task, :transition], _,
+                       %{task_id: ^task_id, to: :failed}}
     end
   end
 
