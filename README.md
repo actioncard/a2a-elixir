@@ -224,8 +224,7 @@ bin/tck all
 ```
 
 The TCK is pinned to a known revision so runs are reproducible; bump `TCK_REF`
-in `bin/tck` to move to a newer suite. `bin/tck-v1` tracks the upstream
-`1.0-dev` branch instead, as an unpinned early warning for spec changes.
+in `bin/tck` to move to a newer suite.
 
 To run the server manually (e.g. for debugging):
 
@@ -237,12 +236,11 @@ mix run test/tck/server_v1.exs
 A2A_TCK_PORT=8080 mix run test/tck/server_v1.exs
 ```
 
-The TCK runs on every PR in CI and is **expected to be red** while the tracked
-compliance gaps are open. Known failures live in
-[`test/tck/expected-failures.txt`](test/tck/expected-failures.txt); the run fails
-only when the actual failure set differs from that baseline, so a new regression
-and a newly-fixed gap are both surfaced. Reports are uploaded as build
-artifacts.
+The TCK runs on every PR in CI and is **expected to be green**. Known failures
+live in [`test/tck/expected-failures.txt`](test/tck/expected-failures.txt); the
+run fails only when the actual failure set differs from that baseline, so a new
+regression and a newly-fixed gap are both surfaced. Reports are uploaded as
+build artifacts.
 
 ## Not Yet Implemented
 
