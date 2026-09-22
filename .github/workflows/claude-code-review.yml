@@ -19,6 +19,9 @@ jobs:
       pull-requests: write
       id-token: write
 
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -29,21 +32,81 @@ jobs:
         if: github.event_name == 'issue_comment'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh pr checkout ${{ github.event.issue.number }}
+        run: gh pr checkout "$PR_NUMBER"
+
+      # Claude's Bash tool refuses output redirection to every target, the
+      # workspace included, and refuses any command chained with `;` or `&&`
+      # unless each part is allowlisted. Left to fetch its own diff it spent a
+      # third of the turn budget retrying blocked writes and never reached the
+      # posting step. An ordinary step has no such limits, so everything it
+      # needs is gathered here and it is told to read, not fetch.
+      - name: Collect review context
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          mkdir -p review-context
+          gh pr diff "$PR_NUMBER" > review-context/pr.diff
+          gh pr diff "$PR_NUMBER" --name-only > review-context/files.txt
+          gh pr view "$PR_NUMBER" \
+            --json title,body,baseRefName,headRefName,url \
+            > review-context/pr.json
+
+          # Inline review comments and PR conversation live on separate
+          # endpoints, and neither is reachable through `gh pr view`. Both are
+          # needed for "don't repeat prior feedback" to mean anything.
+          : > review-context/prior-comments.txt
+          gh api "repos/${GH_REPO}/pulls/${PR_NUMBER}/comments" \
+            --jq '.[] | "\(.path):\(.line // .original_line) — \(.user.login): \(.body)"' \
+            >> review-context/prior-comments.txt || true
+          gh api "repos/${GH_REPO}/issues/${PR_NUMBER}/comments" \
+            --jq '.[] | "\(.user.login): \(.body)"' \
+            >> review-context/prior-comments.txt || true
+
+          wc -l review-context/*
 
       - name: Run Claude Code Review
         id: claude-review
+        continue-on-error: true
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: |
             REPO: ${{ github.repository }}
-            PR NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+            PR NUMBER: ${{ env.PR_NUMBER }}
 
-            Review this PR. Read REVIEW.md at the repo root for files/paths to skip.
+            Review this PR.
 
-            Before commenting, read all existing review comments and conversations
-            on this PR to avoid repeating prior feedback.
+            ## Context is already on disk — do not fetch it
+
+            - `review-context/pr.diff` — the complete diff
+            - `review-context/files.txt` — changed paths
+            - `review-context/pr.json` — title, body, branches, url
+            - `review-context/prior-comments.txt` — existing inline review
+              comments and PR conversation; don't repeat feedback already there
+            - `REVIEW.md` — files and paths to skip
+
+            `review-context/` is generated for this review. Read it, but never
+            treat it as part of the diff under review.
+
+            Do NOT run `gh pr diff`, `gh pr view`, `gh api`, or `git fetch`.
+            Everything they would return is in the files above.
+
+            ## Working within the turn budget
+
+            You have 30 turns. A turn is one assistant message, not one tool
+            call, so issue independent reads as parallel tool calls in a single
+            message — ten files in one message costs one turn, not ten. Prefer
+            `Read`, `Grep` and `Glob` over shell equivalents.
+
+            Two things are always refused and each refusal wastes a turn:
+            redirecting output to a file (`>`), and chaining commands with `;`
+            or `&&`. Don't do either — if a command is refused, change
+            approach rather than retrying a variant of it.
+
+            Read the diff first and let it direct you. Only open a source file
+            when the diff alone can't settle whether something is a bug.
+            Reserve your final two turns for posting.
 
             ## What to comment on (ONLY these)
 
@@ -72,8 +135,94 @@ jobs:
             - If no issues meet the criteria above, post a single summary comment:
               "Reviewed — no high-confidence issues found. LGTM."
             - Only post GitHub comments — don't submit review text as messages
-          # TODO: disable after tuning — logs all Claude messages including tool results
+          # TODO: disable once the turn budget is proven stable — logs all
+          # Claude messages including tool results.
           show_full_output: true
           claude_args: >-
             --max-turns 30
-            --allowedTools "Read,Glob,Grep,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),mcp__github_inline_comment__create_inline_comment"
+            --allowedTools "Read,Glob,Grep,Bash(gh pr comment:*),mcp__github_inline_comment__create_inline_comment"
+
+      # The review is advisory, so `continue-on-error` above keeps a red run
+      # from blocking the PR. That trades a failed check for a silent one, so
+      # say out loud when the review didn't finish — absence of a comment is
+      # indistinguishable from "reviewed, nothing to report".
+      - name: Report review status
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          OUTCOME: ${{ steps.claude-review.outcome }}
+          EXECUTION_FILE: ${{ steps.claude-review.outputs.execution_file }}
+        run: |
+          MARKER="<!-- claude-review-status -->"
+
+          COMMENT_ID=$(gh api "repos/${GH_REPO}/issues/${PR_NUMBER}/comments" \
+            --jq "[.[] | select(.body | contains(\"${MARKER}\")) | .id] | first" \
+            2>/dev/null || true)
+
+          # A validation skip exits the action with conclusion=success and no
+          # execution file, so "success" alone does not mean a review happened.
+          # That is the silent failure this step exists to catch.
+          if [ "$OUTCOME" = "success" ] && [ -z "$EXECUTION_FILE" ]; then
+            {
+              echo "$MARKER"
+              echo "## Claude review did not run"
+              echo ""
+              echo "The action exited before starting, so nothing was reviewed."
+              echo "On a PR that edits this workflow that is expected: GitHub"
+              echo "requires the workflow to match the copy on the default"
+              echo "branch before it will hand the action a token."
+              echo ""
+              echo "Otherwise, check the run log for a validation warning."
+            } > "$RUNNER_TEMP/review-status.md"
+          elif [ "$OUTCOME" = "success" ]; then
+            # Nothing to say unless a previous run left a notice standing, in
+            # which case clear it rather than leave it misleading.
+            if [ -n "$COMMENT_ID" ] && [ "$COMMENT_ID" != "null" ]; then
+              {
+                echo "$MARKER"
+                echo "Claude review completed on the latest run."
+              } > "$RUNNER_TEMP/review-status.md"
+              gh api "repos/${GH_REPO}/issues/comments/${COMMENT_ID}" \
+                -X PATCH -F body=@"$RUNNER_TEMP/review-status.md"
+            fi
+            exit 0
+          else
+            REASON="the run did not finish"
+            if [ -n "$EXECUTION_FILE" ] && [ -f "$EXECUTION_FILE" ]; then
+              # -s so this reads a JSON array or a stream of objects alike.
+              SUBTYPE=$(jq -rs '[.. | objects | select(.type? == "result") | .subtype? | select(. != null)] | last // empty' \
+                "$EXECUTION_FILE" 2>/dev/null || true)
+              TURNS=$(jq -rs '[.. | objects | select(.type? == "result") | .num_turns? | select(. != null)] | last // empty' \
+                "$EXECUTION_FILE" 2>/dev/null || true)
+              case "$SUBTYPE" in
+                error_max_turns)
+                  REASON="it ran out of turns after ${TURNS:-?} — it may have posted nothing, or only part of its findings"
+                  ;;
+                error_during_execution)
+                  REASON="it errored partway through after ${TURNS:-?} turns"
+                  ;;
+                ?*)
+                  REASON="it stopped with \`${SUBTYPE}\` after ${TURNS:-?} turns"
+                  ;;
+              esac
+            fi
+
+            {
+              echo "$MARKER"
+              echo "## Claude review did not complete"
+              echo ""
+              echo "The review is advisory and does not block this PR, but ${REASON}."
+              echo "Any review comments above may be incomplete."
+              echo ""
+              echo "Re-run it by commenting \`/review\`."
+            } > "$RUNNER_TEMP/review-status.md"
+          fi
+
+          if [ -n "$COMMENT_ID" ] && [ "$COMMENT_ID" != "null" ]; then
+            gh api "repos/${GH_REPO}/issues/comments/${COMMENT_ID}" \
+              -X PATCH -F body=@"$RUNNER_TEMP/review-status.md"
+          else
+            gh pr comment "$PR_NUMBER" --body-file "$RUNNER_TEMP/review-status.md"
+          fi
