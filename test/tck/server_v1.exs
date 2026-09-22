@@ -87,7 +87,16 @@ base_url = "http://localhost:#{port}"
 
 {:ok, _} =
   Bandit.start_link(
-    plug: {A2A.Plug, [agent: TCK.Agent, base_url: base_url]},
+    plug:
+      {A2A.Plug,
+       [
+         agent: TCK.Agent,
+         base_url: base_url,
+         # A2A.Plug's streaming gate reads agent_card_opts directly, the same
+         # source encode_agent_card/2 publishes from, so this cannot advertise a
+         # capability the server then refuses.
+         agent_card_opts: [capabilities: %{streaming: true}]
+       ]},
     port: port,
     startup_log: false
   )
