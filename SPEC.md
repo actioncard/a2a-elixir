@@ -20,14 +20,16 @@ Known failures are listed in
 [`test/tck/expected-failures.txt`](test/tck/expected-failures.txt); `bin/tck`
 compares the actual failure set against that baseline and fails only when they
 differ, so both a new regression and a newly-fixed gap are surfaced. A gap is
-closed by deleting its line in the same commit as the fix. **That baseline is
-currently empty** — every test the suite runs against us passes, so any new
-failure is a regression.
+closed by deleting its line in the same commit as the fix.
 
 ### Current Results
 
-`bin/tck all` — 78 passed, 0 failed, 187 skipped. The skips are capability-
-and transport-gated tests, not failures.
+`bin/tck all` — 82 passed, 4 failed (all baselined), 179 skipped. The skips are
+capability- and transport-gated tests, not failures.
+
+The TCK server declares `capabilities.streaming` (#84), which is why the SSE
+suites run at all. Push notifications and the authenticated extended card are
+still undeclared, so those families continue to skip — see below.
 
 | Suite area | What it covers | Notes |
 |------------|----------------|-------|
@@ -39,19 +41,23 @@ and transport-gated tests, not failures.
 
 ### Known Gaps
 
-None. `test/tck/expected-failures.txt` holds no entries — the file is kept for
-its baseline protocol, which the next gap will follow.
+Both surfaced by #84, which un-skipped the SSE suites. Four node ids, two
+causes, listed in `test/tck/expected-failures.txt`.
+
+| Tests | Gap | Issue |
+|-------|-----|-------|
+| `STREAM-ORDER-001`, `JSONRPC-SSE-001` | Stream events are flat and discriminated by `kind`; v1.0 requires the `StreamResponse` oneof (`task` / `message` / `statusUpdate` / `artifactUpdate`) | #96 |
+| `STREAM-SUB-004` (2 node ids) | `tasks/resubscribe` is unimplemented — answers `-32004` where the spec wants `-32001` for an unknown task | #99 |
 
 ### Skipped (Expected)
 
 | Tests | Reason | Unblocked by |
 |-------|--------|--------------|
-| Extended agent card | `supportsAuthenticatedExtendedCard` not declared | Authenticated Extended Card (below) |
+| Extended agent card | `supportsAuthenticatedExtendedCard` not declared | #100 |
 | In-task authentication | Agent doesn't trigger `auth-required` state | Optional — agent-level decision |
 | TLS / certificate validation | TCK server runs plain HTTP on localhost | Deploy-time concern, not library |
-| Push notification capabilities | `pushNotifications` not declared | Push Notifications (below) |
-| SSE streaming (11 jsonrpc tests, incl. `JSONRPC-SSE-001`) | `streaming` not declared by the TCK server, so the capability gate refuses `message/stream` | #84 |
-| `CORE-MULTI-005` context inference | Tasks get no `contextId` when the client sends none, so the test cannot run | Server-assigned `contextId` (not yet tracked) |
+| Push notification capabilities | `pushNotifications` not declared | #93, blocked by #92 |
+| `CORE-MULTI-005` context inference | Tasks get no `contextId` when the client sends none, so the test cannot run | #101 |
 | gRPC / HTTP+JSON transports | Single transport (JSON-RPC only) | gRPC / REST Transport Bindings (below) |
 | OAuth2 metadata URL | No OAuth2 scheme configured | Client-Side OAuth 2.0 Flows (below) |
 
@@ -64,10 +70,10 @@ and have not been re-derived; treat them as intent, not literal paths.
 | # | Feature | TCK tests enabled |
 |---|---------|-------------------|
 | 1 | **Push Notifications** | `capabilities/` push notification tests; mandatory push config method tests |
-| 2 | **Authenticated Extended Card** | `mandatory/protocol/test_extended_agent_card.py`; `capabilities/` extended card tests |
+| 2 | **Authenticated Extended Card** (#100) | `mandatory/protocol/test_extended_agent_card.py`; `capabilities/` extended card tests |
 | 3 | **gRPC Transport Binding** | `transport-equivalence` category (functional equivalence across transports) |
 | 4 | **REST Transport Binding** | `transport-equivalence` category |
-| 5 | **Task Resubscribe Streaming** | `capabilities/` resubscribe streaming tests |
+| 5 | **Task Resubscribe Streaming** (#99) | `STREAM-SUB-004`; `capabilities/` resubscribe streaming tests |
 
 ---
 
