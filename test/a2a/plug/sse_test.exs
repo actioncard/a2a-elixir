@@ -52,6 +52,34 @@ defmodule A2A.Plug.SSETest do
     {:ok, agent: agent}
   end
 
+  describe "message/stream with a bare-message agent" do
+    setup do
+      {:ok, message_agent: start_supervised!({A2A.Test.MessageAgent, [name: nil]})}
+    end
+
+    test "emits a single message event and nothing else", %{message_agent: agent} do
+      conn = stream_conn(message_params("hi"), agent)
+
+      assert conn.status == 200
+      assert [event] = parse_sse_events(conn)
+
+      assert event["jsonrpc"] == "2.0"
+      assert event["result"]["kind"] == "message"
+      assert event["result"]["role"] == "ROLE_AGENT"
+      assert [%{"text" => "Direct: hi"}] = event["result"]["parts"]
+      refute Map.has_key?(event["result"], "taskId")
+    end
+
+    test "a bare message on a task-scoped stream returns -32006", %{message_agent: agent} do
+      {:ok, task} = A2A.call(agent, "start")
+
+      params = Map.put(message_params("more"), "id", task.id)
+      conn = stream_conn(params, agent)
+
+      assert Jason.decode!(conn.resp_body)["error"]["code"] == -32_006
+    end
+  end
+
   describe "message/stream" do
     test "returns text/event-stream content type", %{agent: agent} do
       conn = stream_conn(message_params(), agent)

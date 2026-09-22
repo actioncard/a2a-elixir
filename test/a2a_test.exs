@@ -127,4 +127,21 @@ defmodule A2ATest do
       assert {:error, {:not_streaming, _task}} = A2A.stream(pid, "hello")
     end
   end
+
+  describe "A2A.call/3 with a bare-message agent" do
+    setup do
+      pid = start_supervised!({A2A.Test.MessageAgent, name: :"bare_#{System.unique_integer()}"})
+      %{pid: pid}
+    end
+
+    test "returns a bare message when the agent replies {:message, parts}", %{pid: pid} do
+      assert {:ok, %A2A.Message{role: :agent} = message} = A2A.call(pid, "hello")
+      assert [%A2A.Part.Text{text: "Direct: hello"}] = message.parts
+    end
+
+    test "stream/3 returns the bare message with no stream", %{pid: pid} do
+      assert {:ok, %A2A.Message{} = message} = A2A.stream(pid, "hello")
+      assert [%A2A.Part.Text{text: "Direct: hello"}] = message.parts
+    end
+  end
 end

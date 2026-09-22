@@ -56,6 +56,9 @@ defmodule A2A do
   The `agent` can be a module name (registered GenServer) or a PID.
   The `message` can be a string, an `A2A.Message.t()`, or a list of parts.
 
+  Returns `{:ok, task}`, or `{:ok, message}` when the agent replies
+  `{:message, parts}` — a bare `A2A.Message.t()` with no task behind it.
+
   ## Options
 
   - `:context_id` — associate the message with a conversation context
@@ -72,7 +75,7 @@ defmodule A2A do
       {:ok, task} = A2A.call(MyAgent, "large", task_id: task.id)
   """
   @spec call(GenServer.server(), String.t() | A2A.Message.t(), keyword()) ::
-          {:ok, A2A.Task.t()} | {:error, term()}
+          {:ok, A2A.Task.t() | A2A.Message.t()} | {:error, term()}
   def call(agent, message, opts \\ [])
 
   def call(agent, message, opts) when is_binary(message) do
@@ -85,6 +88,13 @@ defmodule A2A do
 
     :telemetry.span([:a2a, :agent, :call], meta, fn ->
       case GenServer.call(agent, {:message, message, opts}, timeout) do
+        {:ok, %A2A.Message{} = reply} = result ->
+          {result,
+           Map.merge(meta, %{
+             message_id: reply.message_id,
+             context_id: reply.context_id
+           })}
+
         {:ok, task} = result ->
           {result,
            Map.merge(meta, %{
@@ -105,6 +115,9 @@ defmodule A2A do
   The agent's `handle_message/2` must return `{:stream, enumerable}`.
   The returned stream is lazy — the caller must consume it.
 
+  An agent that replies `{:message, parts}` answers out-of-band instead:
+  the call returns `{:ok, message}` with no task and no stream.
+
   ## Options
 
   - `:context_id` — associate the message with a conversation context
@@ -117,7 +130,7 @@ defmodule A2A do
       |> Stream.run()
   """
   @spec stream(GenServer.server(), String.t() | A2A.Message.t(), keyword()) ::
-          {:ok, A2A.Task.t(), Enumerable.t()} | {:error, term()}
+          {:ok, A2A.Task.t(), Enumerable.t()} | {:ok, A2A.Message.t()} | {:error, term()}
   def stream(agent, message, opts \\ [])
 
   def stream(agent, message, opts) when is_binary(message) do
@@ -138,6 +151,13 @@ defmodule A2A do
              task_id: task.id,
              status: task.status.state,
              context_id: task.context_id
+           })}
+
+        {:ok, %A2A.Message{} = agent_message} = result ->
+          {result,
+           Map.merge(meta, %{
+             message_id: agent_message.message_id,
+             context_id: agent_message.context_id
            })}
 
         {:ok, task} ->

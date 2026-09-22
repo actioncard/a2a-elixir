@@ -43,6 +43,13 @@ defmodule A2A.ClientTest do
     ]
   }
 
+  @message_json %{
+    "messageId" => "msg-77",
+    "role" => "agent",
+    "contextId" => "ctx-9",
+    "parts" => [%{"kind" => "text", "text" => "Direct message response"}]
+  }
+
   defp jsonrpc_success(result, id \\ 1) do
     %{"jsonrpc" => "2.0", "id" => id, "result" => result}
   end
@@ -126,6 +133,33 @@ defmodule A2A.ClientTest do
       assert task.id == "tsk-123"
       assert task.status.state == :completed
       assert length(task.history) == 2
+    end
+
+    test "decodes a bare message result" do
+      plug = fn conn ->
+        json_resp(conn, 200, jsonrpc_success(%{"message" => @message_json}))
+      end
+
+      client = Client.new("https://agent.example.com", plug: plug)
+
+      assert {:ok, %A2A.Message{} = message} = Client.send_message(client, "Hello!")
+      assert message.role == :agent
+      assert message.context_id == "ctx-9"
+      assert [%A2A.Part.Text{text: "Direct message response"}] = message.parts
+    end
+
+    test "a message result without messageId returns an error" do
+      plug = fn conn ->
+        json_resp(
+          conn,
+          200,
+          jsonrpc_success(%{"message" => Map.delete(@message_json, "messageId")})
+        )
+      end
+
+      client = Client.new("https://agent.example.com", plug: plug)
+
+      assert {:error, {:missing_field, "messageId"}} = Client.send_message(client, "Hello!")
     end
 
     test "sends message with task_id and context_id" do
@@ -324,6 +358,22 @@ defmodule A2A.ClientTest do
                status: %{state: :completed},
                final: true
              } = Enum.at(decoded, 2)
+
+      GenServer.stop(server)
+    end
+
+    test "decodes a bare message event" do
+      message_event = Map.put(@message_json, "kind", "message")
+
+      sse_plug = {__MODULE__.SSEPlug, events: [message_event]}
+      {:ok, server} = Bandit.start_link(plug: sse_plug, port: 0, ip: :loopback)
+      {:ok, {_ip, port}} = ThousandIsland.listener_info(server)
+
+      client = Client.new("http://127.0.0.1:#{port}")
+      assert {:ok, stream} = Client.stream_message(client, "hi")
+
+      assert [%A2A.Message{role: :agent} = message] = Enum.to_list(stream)
+      assert [%A2A.Part.Text{text: "Direct message response"}] = message.parts
 
       GenServer.stop(server)
     end

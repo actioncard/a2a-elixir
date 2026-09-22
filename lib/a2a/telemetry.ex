@@ -27,6 +27,11 @@ defmodule A2A.Telemetry do
 
       %{task_id: String.t(), status: atom(), context_id: String.t() | nil}
 
+  When the agent replies `{:message, parts}` there is no task, so stop
+  metadata is instead:
+
+      %{message_id: String.t(), context_id: String.t() | nil}
+
   On error, stop metadata instead contains `%{error: term()}`.
 
   ### `[:a2a, :agent, :message]`
@@ -44,7 +49,11 @@ defmodule A2A.Telemetry do
 
   **Stop metadata** (adds to start):
 
-      %{reply_type: :reply | :stream | :input_required | :error}
+      %{reply_type: :reply | :message | :stream | :input_required | :error}
+
+  A `:message` reply type means the agent answered out-of-band: the
+  `task_id` in this span's metadata is the transient task the runtime built
+  for the callback, which was then discarded and never persisted.
 
   ### `[:a2a, :agent, :cancel]`
 

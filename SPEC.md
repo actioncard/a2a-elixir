@@ -16,34 +16,31 @@ category-based v0.3 suite with RFC 2119 requirement levels, so MUST failures
 are hard, SHOULD failures are expected failures, and MAY tests skip when the
 capability isn't declared.
 
-**The TCK job is expected to be red** while the gaps below are open. Known
-failures are listed in
+Known failures are listed in
 [`test/tck/expected-failures.txt`](test/tck/expected-failures.txt); `bin/tck`
 compares the actual failure set against that baseline and fails only when they
 differ, so both a new regression and a newly-fixed gap are surfaced. A gap is
-closed by deleting its line in the same commit as the fix.
+closed by deleting its line in the same commit as the fix. **That baseline is
+currently empty** — every test the suite runs against us passes, so any new
+failure is a regression.
 
 ### Current Results
 
-`bin/tck all` — 77 passed, 1 failed, 187 skipped. The skips are capability-
+`bin/tck all` — 78 passed, 0 failed, 187 skipped. The skips are capability-
 and transport-gated tests, not failures.
 
 | Suite area | What it covers | Notes |
 |------------|----------------|-------|
 | **agent_card** | Card shape, extensions, caching headers | — |
-| **core_operations** | Message send, task lifecycle, data model, error handling | Message response (#73) |
+| **core_operations** | Message send, task lifecycle, data model, error handling | — |
 | **jsonrpc** | JSON-RPC 2.0 envelope, error codes, error info | — |
 | **grpc** | gRPC transport binding | Skipped — transport not implemented |
 | **http_json** | REST/HTTP+JSON binding | Skipped — transport not implemented |
 
 ### Known Gaps
 
-Every line in the baseline is tracked. The one remaining gap is a library
-defect.
-
-| Issue | Requirement(s) | Gap | Kind |
-|-------|----------------|-----|------|
-| #73 | `DM-MSG-001` | `message/send` always wraps in `%{"task" => …}`; the spec permits a bare Message | library, public API |
+None. `test/tck/expected-failures.txt` holds no entries — the file is kept for
+its baseline protocol, which the next gap will follow.
 
 ### Skipped (Expected)
 

@@ -57,6 +57,11 @@ defmodule TCK.Agent do
       String.starts_with?(message_id, "tck-input-required") ->
         {:input_required, [A2A.Part.Text.new("Please provide additional input")]}
 
+      # The bare-Message half of the SendMessageResponse oneof: the TCK reads
+      # `result["message"]`, so this must not be wrapped in a task.
+      String.starts_with?(message_id, "tck-message-response") ->
+        {:message, [A2A.Part.Text.new("Direct message response")]}
+
       String.contains?(text, "need input") ->
         {:input_required, [A2A.Part.Text.new("Please provide additional input")]}
 

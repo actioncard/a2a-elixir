@@ -235,6 +235,53 @@ defmodule A2A.PlugTest do
     end
   end
 
+  # -- message/send with a bare-message agent ---------------------------------
+
+  describe "message/send with a bare-message agent" do
+    setup do
+      {:ok, message_agent: start_supervised!({A2A.Test.MessageAgent, [name: nil]})}
+    end
+
+    test "returns result.message instead of result.task", %{message_agent: agent} do
+      conn =
+        json_rpc_conn("message/send", message_params("hi"))
+        |> A2A.Plug.call(plug_opts(agent))
+
+      assert conn.status == 200
+
+      result = json_body(conn)["result"]
+      refute Map.has_key?(result, "task")
+      assert result["message"]["role"] == "ROLE_AGENT"
+      assert [%{"text" => "Direct: hi"}] = result["message"]["parts"]
+      assert is_binary(result["message"]["messageId"])
+    end
+
+    test "echoes the request contextId on the message", %{message_agent: agent} do
+      params = Map.put(message_params("hi"), "contextId", "ctx-42")
+
+      conn =
+        json_rpc_conn("message/send", params)
+        |> A2A.Plug.call(plug_opts(agent))
+
+      assert json_body(conn)["result"]["message"]["contextId"] == "ctx-42"
+    end
+
+    test "a bare message on a task-scoped request returns -32006", %{message_agent: agent} do
+      conn =
+        json_rpc_conn("message/send", message_params("start"))
+        |> A2A.Plug.call(plug_opts(agent))
+
+      task_id = json_body(conn)["result"]["task"]["id"]
+      assert is_binary(task_id)
+
+      conn =
+        json_rpc_conn("message/send", Map.put(message_params("more"), "id", task_id))
+        |> A2A.Plug.call(plug_opts(agent))
+
+      assert json_body(conn)["error"]["code"] == -32_006
+    end
+  end
+
   # -- message/send ------------------------------------------------------------
 
   describe "message/send" do

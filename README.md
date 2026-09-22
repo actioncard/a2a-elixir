@@ -49,7 +49,7 @@ end
 {:ok, task} = A2A.call(MyAgent, "hello")
 ```
 
-Agents return `{:reply, parts}`, `{:input_required, parts}`, or `{:stream, enumerable}` from `handle_message/2`. The runtime handles task creation, state transitions, and history.
+Agents return `{:reply, parts}`, `{:message, parts}`, `{:input_required, parts}`, or `{:stream, enumerable}` from `handle_message/2`. The runtime handles task creation, state transitions, and history — except for `{:message, parts}`, which answers with a bare `A2A.Message` and creates no task at all.
 
 ## Serving over HTTP
 

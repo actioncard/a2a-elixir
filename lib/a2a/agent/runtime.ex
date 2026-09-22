@@ -16,6 +16,8 @@ defmodule A2A.Agent.Runtime do
   Processes an incoming message through the agent's task lifecycle.
 
   Creates a new task, transitions through states, and calls `handle_message/2`.
+  An agent that replies `{:message, parts}` answers without a task: the task
+  built for the turn is discarded and only the agent message is returned.
   """
   @spec process_message(
           module(),
@@ -24,7 +26,7 @@ defmodule A2A.Agent.Runtime do
           State.t(),
           map(),
           map()
-        ) :: {Task.t(), State.t()}
+        ) :: {Task.t() | Message.t(), State.t()}
   def process_message(module, message, context_id, state, metadata \\ %{}, extensions \\ %{}) do
     task = Task.new(context_id: context_id, metadata: metadata)
     task = %{task | history: [message]}
@@ -35,17 +37,23 @@ defmodule A2A.Agent.Runtime do
   Continues an existing task with a new message.
 
   Appends the message to the task's history and re-runs `handle_message/2`.
-  Valid for any non-terminal task state.
+  Valid for any non-terminal task state. An agent that answers
+  `{:message, parts}` here is rejected: the client is holding a task id, so a
+  bare Message would strand the task and drop the turn from its history.
   """
   @spec continue_task(module(), Message.t(), Task.t(), State.t(), map()) ::
-          {:ok, {Task.t(), State.t()}} | {:error, :not_continuable}
+          {:ok, {Task.t(), State.t()}} | {:error, :not_continuable | :message_on_task}
   def continue_task(module, message, task, state, extensions \\ %{}) do
     if Task.terminal?(task) do
       {:error, :not_continuable}
     else
       task = %{task | history: task.history ++ [message]}
       task = %{task | metadata: Map.delete(task.metadata, :stream)}
-      {:ok, run_task(module, message, task, state, extensions)}
+
+      case run_task(module, message, task, state, extensions) do
+        {%Task{}, _state} = result -> {:ok, result}
+        {%Message{}, _state} -> {:error, :message_on_task}
+      end
     end
   end
 
@@ -86,9 +94,10 @@ defmodule A2A.Agent.Runtime do
         {result, Map.put(meta, :reply_type, reply_type)}
       end)
 
-    task = handle_reply(reply, task)
-    state = State.track_context(state, task)
-    {task, state}
+    case handle_reply(reply, task) do
+      %Task{} = task -> {task, State.track_context(state, task)}
+      %Message{} = agent_message -> {agent_message, state}
+    end
   end
 
   defp handle_reply({:reply, parts}, task) do
@@ -97,6 +106,12 @@ defmodule A2A.Agent.Runtime do
     task = %{task | artifacts: task.artifacts ++ [artifact]}
     task = %{task | history: task.history ++ [agent_msg]}
     State.transition(task, :completed)
+  end
+
+  # A bare Message answers out-of-band: the task built for this turn is
+  # discarded, never persisted, and never reachable via `tasks/get`.
+  defp handle_reply({:message, parts}, task) do
+    %{Message.new_agent(parts) | context_id: task.context_id}
   end
 
   defp handle_reply({:input_required, parts}, task) do

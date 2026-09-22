@@ -52,7 +52,8 @@ defmodule A2A.Agent do
   ## Task Lifecycle
 
   The runtime manages a task state machine so agent implementations don't
-  have to. Each message creates (or continues) a task that progresses through:
+  have to. Each message creates (or continues) a task — except
+  `{:message, parts}`, which answers without one — that progresses through:
 
       :submitted → :working → :completed
                             → :failed
@@ -62,11 +63,34 @@ defmodule A2A.Agent do
   The reply from `handle_message/2` determines the transition:
 
   - `{:reply, parts}` — creates an artifact, transitions to `:completed`
+  - `{:message, parts}` — answers with a bare `A2A.Message` and **no task**
+    (see below)
   - `{:input_required, parts}` — transitions to `:input_required`, caller
     can continue the same task by passing `task_id:` to the next call
   - `{:stream, enumerable}` — stays `:working`, transitions to `:completed`
     when the caller fully consumes the stream
   - `{:error, reason}` — transitions to `:failed`
+
+  ## Bare Message Replies
+
+  `{:message, parts}` is the other half of the A2A spec's
+  `SendMessageResponse` oneof: the agent answers out-of-band and no task is
+  created. The task the runtime built for the turn is discarded — nothing is
+  persisted, `tasks/get` will not find it, and `A2A.call/3` returns
+  `{:ok, %A2A.Message{}}` instead of a task. On the wire the JSON-RPC result
+  is `{"message": …}` rather than `{"task": …}`.
+
+  The message inherits the request's `context_id` and carries no `task_id`,
+  since there is no task for it to reference.
+
+  Prefer it over `{:reply, parts}` for answers with nothing to track — a
+  lookup, an acknowledgement, a rejected request. Anything a caller might
+  later poll, cancel, or continue needs a task.
+
+  Returning it while continuing an existing task is rejected with
+  `{:error, :message_on_task}` (`-32006` on the wire): the caller is holding a
+  task id, so a bare Message would strand that task and drop the turn from its
+  history.
 
   ## Reply Parts and Status
 
@@ -92,6 +116,7 @@ defmodule A2A.Agent do
 
   For `{:reply, parts}` and `{:stream, enumerable}`, the parts only go
   into `history` and `artifacts` — `status.message` is left empty.
+  `{:message, parts}` populates neither, since it produces no task.
 
   ## Multi-Turn Conversations
 
@@ -160,6 +185,7 @@ defmodule A2A.Agent do
 
   @type reply ::
           {:reply, [A2A.Part.t()]}
+          | {:message, [A2A.Part.t()]}
           | {:stream, Enumerable.t()}
           | {:input_required, [A2A.Part.t()]}
           | {:error, term()}
@@ -219,7 +245,7 @@ defmodule A2A.Agent do
       - `:timeout` — GenServer call timeout in ms (default: `60_000`)
       """
       @spec call(GenServer.server(), A2A.Message.t(), keyword()) ::
-              {:ok, A2A.Task.t()} | {:error, term()}
+              {:ok, A2A.Task.t() | A2A.Message.t()} | {:error, term()}
       def call(server \\ __MODULE__, message, opts \\ []) do
         {timeout, opts} = Keyword.pop(opts, :timeout, 60_000)
         GenServer.call(server, {:message, message, opts}, timeout)
@@ -295,7 +321,10 @@ defmodule A2A.Agent do
           end
 
         case result do
-          {:ok, {task, state}} ->
+          {:ok, {%A2A.Message{} = agent_message, state}} ->
+            {:reply, {:ok, agent_message}, state}
+
+          {:ok, {%A2A.Task{} = task, state}} ->
             task = maybe_wrap_stream(task, from)
             state = A2A.Agent.State.put_task(state, task)
             {:reply, {:ok, task}, state}

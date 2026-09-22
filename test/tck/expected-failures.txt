@@ -9,5 +9,3 @@
 #
 # Comments and blank lines are ignored; order does not matter.
 
-# #73 — message/send always wraps in a Task, never returns a bare Message
-tests/compatibility/core_operations/test_artifacts.py::TestMessageResponse::test_returns_message_with_text_part[jsonrpc]

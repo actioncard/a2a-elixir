@@ -2,13 +2,15 @@ defmodule A2A.Event do
   @moduledoc """
   Streaming events emitted during task execution.
 
-  Two variants exist:
+  Three variants exist:
 
   - `A2A.Event.StatusUpdate` — task status changed
   - `A2A.Event.ArtifactUpdate` — artifact produced or appended
+  - `A2A.Message` — the agent answered out-of-band with a bare message, so
+    the stream carries it alone and there is no task to update
   """
 
-  @type t :: A2A.Event.StatusUpdate.t() | A2A.Event.ArtifactUpdate.t()
+  @type t :: A2A.Event.StatusUpdate.t() | A2A.Event.ArtifactUpdate.t() | A2A.Message.t()
 end
 
 defmodule A2A.Event.StatusUpdate do

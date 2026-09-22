@@ -178,11 +178,11 @@ defmodule A2A.Extension do
               | {:error, JSONRPC.Error.t()}
 
   @doc """
-  Optional. Mutate the outbound task before encoding. Runs in declaration
-  order across activated extensions.
+  Optional. Mutate the outbound task or message before encoding. Runs in
+  declaration order across activated extensions.
   """
-  @callback handle_response(Task.t(), params :: map(), activation()) ::
-              {:ok, Task.t(), activation()}
+  @callback handle_response(Task.t() | Message.t(), params :: map(), activation()) ::
+              {:ok, Task.t() | Message.t(), activation()}
 
   @optional_callbacks init: 1, activate: 3, handle_request: 3, handle_response: 3
 
@@ -369,10 +369,10 @@ defmodule A2A.Extension do
 
   @doc """
   Runs the `handle_response/3` chain over an activated extension list.
-  Returns the possibly-mutated task and the updated activations list.
+  Returns the possibly-mutated task or message and the updated activations list.
   """
-  @spec run_response(activations(), Task.t(), map()) ::
-          {:ok, Task.t(), activations()}
+  @spec run_response(activations(), Task.t() | Message.t(), map()) ::
+          {:ok, Task.t() | Message.t(), activations()}
   def run_response(activations, task, params) do
     {task, acc} =
       Enum.reduce(activations, {task, []}, fn {mod, act, uri}, {t, acc} ->

@@ -13,6 +13,10 @@ if Code.ensure_loaded?(Plug) do
     `ArtifactUpdate` SSE event and finishes with a `StatusUpdate`
     event where `final: true`.
 
+    An agent that replies `{:message, parts}` answers out-of-band: the
+    stream is a single Message event with no task snapshot and no final
+    status, since no task was ever created.
+
     The optional `call_opts` are forwarded to `A2A.stream/3` so that
     metadata, task_id, and context_id reach the agent.
     """
@@ -30,11 +34,21 @@ if Code.ensure_loaded?(Plug) do
           conn = send_task_snapshot(conn, jsonrpc_id, task)
           stream_and_finalize(conn, jsonrpc_id, task, enum)
 
+        {:ok, %A2A.Message{} = agent_message} ->
+          conn |> start_sse() |> send_message_event(jsonrpc_id, agent_message)
+
         {:error, :not_found} ->
           send_jsonrpc_error(conn, jsonrpc_id, Error.task_not_found())
 
         {:error, :not_continuable} ->
           send_jsonrpc_error(conn, jsonrpc_id, Error.unsupported_operation())
+
+        {:error, :message_on_task} ->
+          send_jsonrpc_error(
+            conn,
+            jsonrpc_id,
+            Error.invalid_agent_response("Message reply to a task-scoped request")
+          )
 
         {:error, reason} ->
           send_jsonrpc_error(conn, jsonrpc_id, Error.internal_error(inspect(reason)))
@@ -60,6 +74,18 @@ if Code.ensure_loaded?(Plug) do
       clean = %{task | metadata: Map.delete(task.metadata, :stream)}
       {:ok, encoded} = A2A.JSON.encode(clean)
       send_event(conn, jsonrpc_id, encoded)
+    end
+
+    # The event union is discriminated by "kind", which the Message encoder
+    # does not emit — it is absent from the v1.0 wire shape everywhere a
+    # Message is nested. Stamp it here, where the Message *is* the event.
+    defp send_message_event(conn, jsonrpc_id, message) do
+      {:ok, encoded} = A2A.JSON.encode(message)
+
+      case send_event(conn, jsonrpc_id, Map.put(encoded, "kind", "message")) do
+        {:error, conn} -> conn
+        conn -> conn
+      end
     end
 
     defp stream_and_finalize(conn, jsonrpc_id, task, enum) do

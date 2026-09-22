@@ -158,4 +158,83 @@ defmodule A2A.Agent.RuntimeTest do
       assert stored.status.state == :completed
     end
   end
+
+  describe "MessageAgent runtime" do
+    setup do
+      pid = start_supervised!({A2A.Test.MessageAgent, name: :"msg_#{System.unique_integer()}"})
+      %{pid: pid}
+    end
+
+    test "call/2 returns a bare agent message", %{pid: pid} do
+      assert {:ok, %Message{} = reply} =
+               A2A.Test.MessageAgent.call(pid, Message.new_user("hi"))
+
+      assert reply.role == :agent
+      assert [%A2A.Part.Text{text: "Direct: hi"}] = reply.parts
+      assert String.starts_with?(reply.message_id, "msg-")
+    end
+
+    test "the bare message carries no task_id", %{pid: pid} do
+      {:ok, reply} = A2A.Test.MessageAgent.call(pid, Message.new_user("hi"))
+      assert reply.task_id == nil
+    end
+
+    test "the bare message inherits the request context_id", %{pid: pid} do
+      {:ok, reply} =
+        A2A.Test.MessageAgent.call(pid, Message.new_user("hi"), context_id: "ctx-1")
+
+      assert reply.context_id == "ctx-1"
+    end
+
+    test "no task is persisted for a bare message", %{pid: pid} do
+      {:ok, %Message{}} = A2A.Test.MessageAgent.call(pid, Message.new_user("hi"))
+      assert {:ok, %{tasks: []}} = GenServer.call(pid, {:list_tasks, %{}})
+    end
+
+    test "context tracking skips a bare message", %{pid: pid} do
+      {:ok, %Message{}} =
+        A2A.Test.MessageAgent.call(pid, Message.new_user("hi"), context_id: "ctx-2")
+
+      assert {:ok, %{tasks: []}} = GenServer.call(pid, {:list_tasks, %{"contextId" => "ctx-2"}})
+    end
+
+    test "a bare message reply while continuing a task is rejected", %{pid: pid} do
+      {:ok, task} = A2A.Test.MessageAgent.call(pid, Message.new_user("start"))
+      assert task.status.state == :input_required
+
+      assert {:error, :message_on_task} =
+               A2A.Test.MessageAgent.call(pid, Message.new_user("more"), task_id: task.id)
+    end
+
+    test "a rejected continuation leaves the stored task untouched", %{pid: pid} do
+      {:ok, task} = A2A.Test.MessageAgent.call(pid, Message.new_user("start"))
+
+      {:error, :message_on_task} =
+        A2A.Test.MessageAgent.call(pid, Message.new_user("more"), task_id: task.id)
+
+      assert {:ok, stored} = A2A.Test.MessageAgent.get_task(pid, task.id)
+      assert stored.status.state == :input_required
+      assert length(stored.history) == 2
+    end
+  end
+
+  describe "MessageAgent with TaskStore" do
+    setup do
+      table = :"store_msg_#{System.unique_integer([:positive])}"
+      start_supervised!({A2A.TaskStore.ETS, name: table})
+
+      pid =
+        start_supervised!(
+          {A2A.Test.MessageAgent,
+           name: :"stored_msg_#{System.unique_integer()}", task_store: {A2A.TaskStore.ETS, table}}
+        )
+
+      %{pid: pid, table: table}
+    end
+
+    test "nothing is written to an external task store", %{pid: pid, table: table} do
+      {:ok, %Message{}} = A2A.Test.MessageAgent.call(pid, Message.new_user("hi"))
+      assert {:ok, %{tasks: []}} = A2A.TaskStore.ETS.list_all(table, [])
+    end
+  end
 end

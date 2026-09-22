@@ -22,6 +22,14 @@ defmodule A2A.AgentTest do
       assert {:reply, [%A2A.Part.Text{text: "hello"}]} =
                A2A.Test.EchoAgent.handle_message(msg, ctx)
     end
+
+    test "{:message, parts} is a valid handle_message/2 reply" do
+      msg = A2A.Message.new_user("hello")
+      ctx = %{task_id: "t-1", context_id: nil, history: []}
+
+      assert {:message, [%A2A.Part.Text{text: "Direct: hello"}]} =
+               A2A.Test.MessageAgent.handle_message(msg, ctx)
+    end
   end
 
   describe "use A2A.Agent without options" do

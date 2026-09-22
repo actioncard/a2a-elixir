@@ -5,6 +5,10 @@ defmodule A2A.Test.Handler do
   alias A2A.JSONRPC.Error
 
   @impl true
+  def handle_send(%A2A.Message{message_id: "msg-bare"} = message, _params, _context) do
+    {:ok, %{A2A.Message.new_agent("bare reply") | context_id: message.context_id}}
+  end
+
   def handle_send(message, _params, _context) do
     task = %A2A.Task{
       id: A2A.ID.generate("tsk"),
