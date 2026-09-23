@@ -10,14 +10,6 @@
 # Comments and blank lines are ignored; order does not matter.
 
 
-# --- #96: stream events are not the v1.0 StreamResponse oneof -----------------
-# The TCK requires `result` to carry exactly one of task/message/statusUpdate/
-# artifactUpdate. We emit flat events discriminated by `kind`, so every event in
-# a stream is rejected — including the two that do carry `kind`. Unblocked by
-# the wire change in #96, not by the snapshot fix alone.
-tests/compatibility/core_operations/test_stream_ordering.py::TestStreamEventOrdering::test_streaming_event_ordering[jsonrpc]
-tests/compatibility/jsonrpc/test_sse_streaming.py::TestSseStreamingFormat::test_streaming_events_contain_stream_response
-
 # --- #99: tasks/resubscribe is unimplemented ----------------------------------
 # STREAM-SUB-004 wants -32001 TaskNotFoundError for an unknown task; the stub
 # answers -32004 UnsupportedOperationError for every task. Two node ids, one

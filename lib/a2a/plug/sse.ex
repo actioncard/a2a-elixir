@@ -10,8 +10,9 @@ if Code.ensure_loaded?(Plug) do
     Streams a message/stream response as SSE events.
 
     Calls `A2A.stream/3` on the agent, then sends each part as an
-    `ArtifactUpdate` SSE event and finishes with a `StatusUpdate`
-    event where `final: true`.
+    `ArtifactUpdate` SSE event and finishes with a terminal `StatusUpdate`
+    event. Each event is a `StreamResponse` wrapper inside the JSON-RPC
+    `result`.
 
     An agent that replies `{:message, parts}` answers out-of-band: the
     stream is a single Message event with no task snapshot and no final
@@ -72,17 +73,14 @@ if Code.ensure_loaded?(Plug) do
     # function ref which is not JSON-serializable.
     defp send_task_snapshot(conn, jsonrpc_id, task) do
       clean = %{task | metadata: Map.delete(task.metadata, :stream)}
-      {:ok, encoded} = A2A.JSON.encode(clean)
+      {:ok, encoded} = A2A.JSON.encode_stream_response(clean)
       send_event(conn, jsonrpc_id, encoded)
     end
 
-    # The event union is discriminated by "kind", which the Message encoder
-    # does not emit — it is absent from the v1.0 wire shape everywhere a
-    # Message is nested. Stamp it here, where the Message *is* the event.
     defp send_message_event(conn, jsonrpc_id, message) do
-      {:ok, encoded} = A2A.JSON.encode(message)
+      {:ok, encoded} = A2A.JSON.encode_stream_response(message)
 
-      case send_event(conn, jsonrpc_id, Map.put(encoded, "kind", "message")) do
+      case send_event(conn, jsonrpc_id, encoded) do
         {:error, conn} -> conn
         conn -> conn
       end
@@ -103,7 +101,7 @@ if Code.ensure_loaded?(Plug) do
         event =
           A2A.Event.ArtifactUpdate.new(task.id, artifact, context_id: task.context_id)
 
-        {:ok, encoded} = A2A.JSON.encode(event)
+        {:ok, encoded} = A2A.JSON.encode_stream_response(event)
 
         case send_event(conn, jsonrpc_id, encoded) do
           {:error, conn} -> {:halt, conn}
@@ -126,7 +124,7 @@ if Code.ensure_loaded?(Plug) do
           final: true
         )
 
-      {:ok, encoded} = A2A.JSON.encode(event)
+      {:ok, encoded} = A2A.JSON.encode_stream_response(event)
 
       case send_event(conn, jsonrpc_id, encoded) do
         {:error, conn} -> conn

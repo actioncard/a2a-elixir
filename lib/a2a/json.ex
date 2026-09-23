@@ -53,6 +53,11 @@ defmodule A2A.JSON do
                      "unknown" => :unknown
                    })
 
+  # v1.0 dropped `final` from TaskStatusUpdateEvent: a stream runs until the
+  # task reaches a terminal or interrupted state, then closes. These are the
+  # states that end one, used to reconstruct the flag on decode.
+  @final_states [:completed, :canceled, :failed, :rejected, :input_required, :auth_required]
+
   # v0.3 wire format: ROLE_* prefixed enum values
   @role_to_string %{user: "ROLE_USER", agent: "ROLE_AGENT"}
 
@@ -190,12 +195,7 @@ defmodule A2A.JSON do
     {:ok, status} = encode(event.status)
 
     map =
-      %{
-        "kind" => "status-update",
-        "taskId" => event.task_id,
-        "status" => status,
-        "final" => event.final
-      }
+      %{"taskId" => event.task_id, "status" => status}
       |> put_unless_nil("contextId", event.context_id)
       |> put_unless_empty("metadata", event.metadata)
 
@@ -206,11 +206,7 @@ defmodule A2A.JSON do
     {:ok, artifact} = encode(event.artifact)
 
     map =
-      %{
-        "kind" => "artifact-update",
-        "taskId" => event.task_id,
-        "artifact" => artifact
-      }
+      %{"taskId" => event.task_id, "artifact" => artifact}
       |> put_unless_nil("contextId", event.context_id)
       |> put_unless_nil("append", event.append)
       |> put_unless_nil("lastChunk", event.last_chunk)
@@ -232,6 +228,32 @@ defmodule A2A.JSON do
 
   def encode(%{__struct__: mod}) do
     {:error, {:unsupported_type, mod}}
+  end
+
+  @doc """
+  Encodes a streaming event into the v1.0 `StreamResponse` wrapper.
+
+  Streaming operations and push notification payloads carry exactly one of
+  `task`, `message`, `statusUpdate` or `artifactUpdate`. The wrapper key is
+  the discriminator, which is why the wrapped objects carry no `kind` of
+  their own — the schema rejects unknown properties at both levels.
+  """
+  @spec encode_stream_response(struct()) :: encode_result()
+  def encode_stream_response(%A2A.Task{} = task), do: wrap_stream_response("task", task)
+
+  def encode_stream_response(%A2A.Message{} = message),
+    do: wrap_stream_response("message", message)
+
+  def encode_stream_response(%A2A.Event.StatusUpdate{} = event),
+    do: wrap_stream_response("statusUpdate", event)
+
+  def encode_stream_response(%A2A.Event.ArtifactUpdate{} = event),
+    do: wrap_stream_response("artifactUpdate", event)
+
+  def encode_stream_response(%{__struct__: mod}), do: {:error, {:unsupported_type, mod}}
+
+  defp wrap_stream_response(key, struct) do
+    with {:ok, encoded} <- encode(struct), do: {:ok, %{key => encoded}}
   end
 
   @doc """
@@ -424,8 +446,9 @@ defmodule A2A.JSON do
 
   The `:part` type dispatches on the `"kind"` field, or infers the type
   from content fields (`"text"`, `"file"`, `"data"`) when `"kind"` is
-  absent (v0.3 format). The `:event` type dispatches on `"kind"` to one
-  of `"status-update"`, `"artifact-update"`, `"task"`, or `"message"`.
+  absent (v0.3 format). The `:event` type dispatches on the v1.0
+  `StreamResponse` wrapper key — `"task"`, `"message"`, `"statusUpdate"` or
+  `"artifactUpdate"` — falling back to the v0.3 `"kind"` discriminator.
   """
   @spec decode(map(), decode_type()) :: {:ok, struct()} | {:error, term()}
   def decode(map, :task) do
@@ -521,27 +544,28 @@ defmodule A2A.JSON do
   end
 
   def decode(map, :event) do
-    case Map.get(map, "kind") do
-      "status-update" -> decode(map, :status_update_event)
-      "artifact-update" -> decode(map, :artifact_update_event)
-      "task" -> decode(map, :task)
-      "message" -> decode(map, :message)
-      nil -> {:error, {:missing_field, "kind"}}
-      other -> {:error, {:unknown_kind, other}}
+    case map do
+      %{"task" => inner} when is_map(inner) -> decode(inner, :task)
+      %{"message" => inner} when is_map(inner) -> decode(inner, :message)
+      %{"statusUpdate" => inner} when is_map(inner) -> decode(inner, :status_update_event)
+      %{"artifactUpdate" => inner} when is_map(inner) -> decode(inner, :artifact_update_event)
+      # The schema's patternProperties accept the snake_case spelling too.
+      %{"status_update" => inner} when is_map(inner) -> decode(inner, :status_update_event)
+      %{"artifact_update" => inner} when is_map(inner) -> decode(inner, :artifact_update_event)
+      _ -> decode_event_by_kind(map)
     end
   end
 
   def decode(map, :status_update_event) do
     with {:ok, task_id} <- require_field(map, "taskId"),
          {:ok, status_map} <- require_field(map, "status"),
-         {:ok, status} <- decode(status_map, :status),
-         {:ok, final} <- require_field(map, "final") do
+         {:ok, status} <- decode(status_map, :status) do
       {:ok,
        %A2A.Event.StatusUpdate{
          task_id: task_id,
          context_id: Map.get(map, "contextId"),
          status: status,
-         final: final,
+         final: Map.get(map, "final", status.state in @final_states),
          metadata: Map.get(map, "metadata", %{})
        }}
     end
@@ -738,6 +762,19 @@ defmodule A2A.JSON do
   # -------------------------------------------------------------------
   # Private — Decoding helpers
   # -------------------------------------------------------------------
+
+  # v0.3 discriminated the event union with a "kind" field rather than the
+  # StreamResponse wrapper. Kept so a v0.3 peer's stream still decodes.
+  defp decode_event_by_kind(map) do
+    case Map.get(map, "kind") do
+      "status-update" -> decode(map, :status_update_event)
+      "artifact-update" -> decode(map, :artifact_update_event)
+      "task" -> decode(map, :task)
+      "message" -> decode(map, :message)
+      nil -> {:error, {:missing_field, "kind"}}
+      other -> {:error, {:unknown_kind, other}}
+    end
+  end
 
   defp require_field(map, field) do
     case Map.fetch(map, field) do
