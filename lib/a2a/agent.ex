@@ -449,7 +449,7 @@ defmodule A2A.Agent do
         {:noreply, state}
       end
 
-      def handle_cast({:stream_done, task_id, parts}, state) do
+      def handle_cast({:stream_done, task_id, parts, outcome}, state) do
         case A2A.Agent.State.get_task(state, task_id) do
           {:ok, task} ->
             artifact = A2A.Artifact.new(parts)
@@ -457,7 +457,14 @@ defmodule A2A.Agent do
             task = %{task | artifacts: task.artifacts ++ [artifact]}
             task = %{task | history: task.history ++ [agent_msg]}
             task = %{task | metadata: Map.delete(task.metadata, :stream)}
-            task = A2A.Agent.State.transition(task, :completed)
+
+            # A stream that raised or was abandoned did not produce the result
+            # it promised. The parts it managed to emit are kept — they are
+            # still the agent's output — but the state says so rather than
+            # reporting success to `tasks/get`, webhooks and subscribers alike.
+            final_state = if outcome == :complete, do: :completed, else: :failed
+
+            task = A2A.Agent.State.transition(task, final_state)
             state = A2A.Agent.State.put_task(state, task)
             A2A.PushNotification.deliver(state, task)
             state = notify_subscribers(state, task)
