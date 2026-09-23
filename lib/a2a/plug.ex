@@ -39,11 +39,16 @@ if Code.ensure_loaded?(Plug) do
     - `:metadata` — static metadata merged into every JSON-RPC call
       (default: `%{}`). Useful for deployment-level metadata like
       `%{"env" => "prod"}`. Overridden per-request by `put_metadata/2`.
+    - `:resubscribe_timeout` — how long a `tasks/resubscribe` stream waits
+      without an event before closing, in ms (default: `60_000`). A task that
+      never reaches a terminal state would otherwise hold its connection
+      process open indefinitely.
     - `:authorize_task` — optional authorization callback for task-scoped
       operations. Called as `(operation, task, context)` before returning,
       canceling, or listing tasks, and before any push notification config
       operation. `operation` is one of `:get`, `:cancel`, `:list`,
-      `:push_set`, `:push_get`, `:push_list`, or `:push_delete` — the push
+      `:resubscribe`, `:push_set`, `:push_get`, `:push_list`, or
+      `:push_delete` — the push
       operations are distinct so an authorizer can grant read access to a
       task without also granting the ability to rewrite its webhooks.
       Denied requests return `TaskNotFoundError` so task IDs are not leaked.
@@ -150,7 +155,8 @@ if Code.ensure_loaded?(Plug) do
         metadata: Keyword.get(opts, :metadata, %{}),
         authorize_task: Keyword.get(opts, :authorize_task),
         extensions: A2A.Extension.compile(Keyword.get(opts, :extensions, [])),
-        versions: Keyword.get(opts, :versions, A2A.Version.supported_default())
+        versions: Keyword.get(opts, :versions, A2A.Version.supported_default()),
+        resubscribe_timeout: Keyword.get(opts, :resubscribe_timeout, 60_000)
       }
     end
 
@@ -378,8 +384,24 @@ if Code.ensure_loaded?(Plug) do
                 send_json(conn, Response.error(id, Error.unsupported_operation()))
               end
 
-            {:stream, "tasks/resubscribe", _params, id} ->
-              send_json(conn, Response.error(id, Error.unsupported_operation()))
+            {:stream, "tasks/resubscribe", params, id} ->
+              # Ordered so each rejection carries the code the spec asks for:
+              # an undeclared capability and a terminal task are both
+              # unsupported operations, but an unknown task is not found.
+              with true <- streaming_declared?(opts),
+                   {:ok, task} <-
+                     authorized_task(opts.agent, params["id"], :resubscribe, params, opts) do
+                A2A.Plug.SSE.subscribe_task(
+                  conn,
+                  opts.agent,
+                  task.id,
+                  id,
+                  opts.resubscribe_timeout
+                )
+              else
+                false -> send_json(conn, Response.error(id, Error.unsupported_operation()))
+                {:error, error} -> send_json(conn, Response.error(id, error))
+              end
           end
 
         {:error, :parse_error} ->

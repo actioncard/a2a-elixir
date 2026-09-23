@@ -56,6 +56,66 @@ if Code.ensure_loaded?(Plug) do
       end
     end
 
+    @doc """
+    Streams an already-running task as SSE events.
+
+    The caller has already resolved and authorized the task; this registers
+    as a subscriber, sends the current task as the opening event, then relays
+    each state change until the task is terminal.
+
+    Unlike `stream_message/5` this never enumerates the agent's own stream —
+    that enumerable replays from the start rather than attaching, so a second
+    consumer would duplicate the task's artifacts and history.
+    """
+    @spec subscribe_task(Plug.Conn.t(), GenServer.server(), String.t(), term(), timeout()) ::
+            Plug.Conn.t()
+    def subscribe_task(conn, agent, task_id, jsonrpc_id, idle_timeout) do
+      case GenServer.call(agent, {:subscribe, task_id}) do
+        {:ok, task} ->
+          conn
+          |> start_sse()
+          |> send_task_snapshot(jsonrpc_id, task)
+          |> relay_task_events(jsonrpc_id, idle_timeout)
+
+        {:error, :not_found} ->
+          send_jsonrpc_error(conn, jsonrpc_id, Error.task_not_found())
+
+        {:error, :terminal} ->
+          send_jsonrpc_error(conn, jsonrpc_id, Error.unsupported_operation())
+      end
+    end
+
+    defp relay_task_events({:error, conn}, _jsonrpc_id, _idle_timeout), do: conn
+
+    defp relay_task_events(conn, jsonrpc_id, idle_timeout) do
+      receive do
+        {:a2a_task_event, _task_id, task} ->
+          event =
+            A2A.Event.StatusUpdate.new(task.id, task.status,
+              context_id: task.context_id,
+              final: A2A.Task.terminal?(task)
+            )
+
+          {:ok, encoded} = A2A.JSON.encode_stream_response(event)
+
+          case send_event(conn, jsonrpc_id, encoded) do
+            {:error, conn} ->
+              conn
+
+            conn ->
+              if A2A.Task.terminal?(task) do
+                conn
+              else
+                relay_task_events(conn, jsonrpc_id, idle_timeout)
+              end
+          end
+      after
+        # A task that never reaches a terminal state would otherwise pin this
+        # connection process indefinitely.
+        idle_timeout -> conn
+      end
+    end
+
     defp send_jsonrpc_error(conn, jsonrpc_id, error) do
       conn
       |> put_resp_content_type("application/json")

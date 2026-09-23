@@ -250,7 +250,6 @@ Key A2A spec features not yet covered:
   CRUD is implemented; nothing POSTs to a registered URL yet)
 - **Authenticated extended cards** — per-client capability disclosure
 - **REST / gRPC transports** — only JSON-RPC is supported
-- **Task resubscribe** — reconnecting to active SSE streams
 - **Security middleware** — agent card signatures and OAuth flows (auth plug,
   task ACL hook, and security scheme data modeling are complete)
 

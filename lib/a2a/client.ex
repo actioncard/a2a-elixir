@@ -248,6 +248,76 @@ if Code.ensure_loaded?(Req) do
     end
 
     @doc """
+    Reattaches to a running task's event stream via `SubscribeToTask`.
+
+    Returns `{:ok, stream}` for a task still in progress. The first element is
+    the task as it stands; subsequent elements are `%A2A.Event.StatusUpdate{}`
+    structs, and the stream ends when the task reaches a terminal state.
+
+    A task that does not exist answers `TaskNotFoundError` and one that has
+    already finished answers `UnsupportedOperationError` — both come back as
+    `{:error, %A2A.JSONRPC.Error{}}` rather than an empty stream.
+
+    Events produced before the subscription are not replayed, so a caller that
+    needs the full history should pair this with `get_task/3`.
+
+    ## Options
+
+    - `:history_length` — number of history entries to include in the snapshot
+    - `:headers` — additional HTTP headers
+    - `:timeout` — HTTP request timeout in ms
+
+    ## Examples
+
+        {:ok, stream} = A2A.Client.resubscribe(client, "tsk-abc123")
+        Enum.each(stream, &IO.inspect/1)
+    """
+    @spec resubscribe(target(), String.t(), keyword()) ::
+            {:ok, Enumerable.t()} | {:error, term()}
+    def resubscribe(target, task_id, opts \\ []) do
+      client = ensure_client(target)
+
+      params =
+        %{"id" => task_id}
+        |> put_opt("historyLength", opts[:history_length])
+
+      body = jsonrpc_request("SubscribeToTask", params)
+      req = merge_req_opts(client.req, take_req_opts(opts))
+
+      case Req.post(req,
+             body: Jason.encode!(body),
+             headers: [{"accept", "text/event-stream"}],
+             into: :self
+           ) do
+        {:ok, %Req.Response{status: 200} = response} ->
+          # Rejections arrive as an ordinary JSON-RPC body on a 200, so the
+          # content type is what separates a stream from an error. Feeding an
+          # error body to the SSE decoder would surface it as a dropped frame.
+          if event_stream?(response) do
+            {:ok, build_sse_stream(response.body)}
+          else
+            decode_jsonrpc_result(%{response | body: collect_async_body(response.body)}, :task)
+          end
+
+        {:ok, %Req.Response{status: status}} ->
+          {:error, {:unexpected_status, status}}
+
+        {:error, _} = error ->
+          error
+      end
+    end
+
+    defp event_stream?(response) do
+      response
+      |> Req.Response.get_header("content-type")
+      |> Enum.any?(&String.starts_with?(&1, "text/event-stream"))
+    end
+
+    defp collect_async_body(async) do
+      async |> Enum.to_list() |> IO.iodata_to_binary()
+    end
+
+    @doc """
     Retrieves a task by ID via `GetTask`.
 
     ## Options
