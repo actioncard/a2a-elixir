@@ -24,7 +24,7 @@ closed by deleting its line in the same commit as the fix.
 
 ### Current Results
 
-`bin/tck all` — 82 passed, 4 failed (all baselined), 179 skipped. The skips are
+`bin/tck all` — 84 passed, 2 failed (all baselined), 179 skipped. The skips are
 capability- and transport-gated tests, not failures.
 
 The TCK server declares `capabilities.streaming` (#84), which is why the SSE
@@ -41,12 +41,10 @@ still undeclared, so those families continue to skip — see below.
 
 ### Known Gaps
 
-Both surfaced by #84, which un-skipped the SSE suites. Four node ids, two
-causes, listed in `test/tck/expected-failures.txt`.
+Two node ids, one cause, listed in `test/tck/expected-failures.txt`.
 
 | Tests | Gap | Issue |
 |-------|-----|-------|
-| `STREAM-ORDER-001`, `JSONRPC-SSE-001` | Stream events are flat and discriminated by `kind`; v1.0 requires the `StreamResponse` oneof (`task` / `message` / `statusUpdate` / `artifactUpdate`) | #96 |
 | `STREAM-SUB-004` (2 node ids) | `tasks/resubscribe` is unimplemented — answers `-32004` where the spec wants `-32001` for an unknown task | #99 |
 
 ### Skipped (Expected)

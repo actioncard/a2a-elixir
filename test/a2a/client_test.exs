@@ -311,7 +311,7 @@ defmodule A2A.ClientTest do
 
   describe "stream_message/3" do
     @tag timeout: 10_000
-    test "streams and decodes SSE events via Bandit" do
+    test "decodes the v0.3 kind-discriminated shape from an older peer" do
       status_event = %{
         "kind" => "status-update",
         "taskId" => "tsk-123",
@@ -362,8 +362,82 @@ defmodule A2A.ClientTest do
       GenServer.stop(server)
     end
 
+    @tag timeout: 10_000
+    test "decodes the v1.0 StreamResponse wrapper" do
+      events = [
+        %{"task" => %{"id" => "tsk-123", "status" => %{"state" => "working"}}},
+        %{
+          "statusUpdate" => %{
+            "taskId" => "tsk-123",
+            "status" => %{"state" => "working"}
+          }
+        },
+        %{
+          "artifactUpdate" => %{
+            "taskId" => "tsk-123",
+            "artifact" => %{"parts" => [%{"kind" => "text", "text" => "chunk"}]}
+          }
+        },
+        %{
+          "statusUpdate" => %{
+            "taskId" => "tsk-123",
+            "status" => %{"state" => "completed"}
+          }
+        }
+      ]
+
+      sse_plug = {__MODULE__.SSEPlug, events: events}
+      {:ok, server} = Bandit.start_link(plug: sse_plug, port: 0, ip: :loopback)
+      {:ok, {_ip, port}} = ThousandIsland.listener_info(server)
+
+      client = Client.new("http://127.0.0.1:#{port}")
+      assert {:ok, stream} = Client.stream_message(client, "Count to 5")
+
+      assert [task, working, artifact, completed] = Enum.to_list(stream)
+      assert %A2A.Task{id: "tsk-123"} = task
+      assert %A2A.Event.StatusUpdate{final: false} = working
+      assert %A2A.Event.ArtifactUpdate{artifact: %A2A.Artifact{}} = artifact
+
+      # `final` is gone from the wire, so it is reconstructed from the state.
+      assert %A2A.Event.StatusUpdate{status: %{state: :completed}, final: true} = completed
+
+      GenServer.stop(server)
+    end
+
+    @tag timeout: 10_000
+    test "round-trips a real server's stream without dropping the task snapshot" do
+      agent = start_supervised!({A2A.Test.StreamAgent, [name: nil]})
+
+      plug_opts = [
+        agent: agent,
+        base_url: "http://localhost",
+        agent_card_opts: [capabilities: %{streaming: true}]
+      ]
+
+      {:ok, server} =
+        Bandit.start_link(plug: {A2A.Plug, plug_opts}, port: 0, ip: :loopback)
+
+      {:ok, {_ip, port}} = ThousandIsland.listener_info(server)
+
+      client = Client.new("http://127.0.0.1:#{port}")
+      assert {:ok, stream} = Client.stream_message(client, "go")
+
+      decoded = Enum.to_list(stream)
+
+      # The encoder and decoder disagreed here: the server sent the opening
+      # snapshot with no discriminator and the client dropped it silently, so
+      # the caller never learned the task id from the stream.
+      assert [%A2A.Task{} = task | rest] = decoded
+      assert is_binary(task.id)
+
+      assert Enum.count(rest, &match?(%A2A.Event.ArtifactUpdate{}, &1)) == 3
+      assert %A2A.Event.StatusUpdate{status: %{state: :completed}} = List.last(rest)
+
+      GenServer.stop(server)
+    end
+
     test "decodes a bare message event" do
-      message_event = Map.put(@message_json, "kind", "message")
+      message_event = %{"message" => @message_json}
 
       sse_plug = {__MODULE__.SSEPlug, events: [message_event]}
       {:ok, server} = Bandit.start_link(plug: sse_plug, port: 0, ip: :loopback)

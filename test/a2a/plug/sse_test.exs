@@ -64,10 +64,10 @@ defmodule A2A.Plug.SSETest do
       assert [event] = parse_sse_events(conn)
 
       assert event["jsonrpc"] == "2.0"
-      assert event["result"]["kind"] == "message"
-      assert event["result"]["role"] == "ROLE_AGENT"
-      assert [%{"text" => "Direct: hi"}] = event["result"]["parts"]
-      refute Map.has_key?(event["result"], "taskId")
+      message = event["result"]["message"]
+      assert message["role"] == "ROLE_AGENT"
+      assert [%{"text" => "Direct: hi"}] = message["parts"]
+      refute Map.has_key?(message, "taskId")
     end
 
     test "a bare message on a task-scoped stream returns -32006", %{message_agent: agent} do
@@ -98,9 +98,10 @@ defmodule A2A.Plug.SSETest do
 
       assert first["jsonrpc"] == "2.0"
       assert first["id"] == 1
-      assert is_binary(first["result"]["id"])
-      assert first["result"]["status"]["state"]
-      refute Map.has_key?(first["result"], "kind")
+      task = first["result"]["task"]
+      assert is_binary(task["id"])
+      assert task["status"]["state"]
+      refute Map.has_key?(task, "kind")
     end
 
     test "middle events are artifact updates", %{agent: agent} do
@@ -111,20 +112,20 @@ defmodule A2A.Plug.SSETest do
       artifact_events = Enum.slice(events, 1..3)
 
       for event <- artifact_events do
-        assert event["result"]["kind"] == "artifact-update"
-        assert event["result"]["taskId"]
-        assert event["result"]["artifact"]["parts"]
+        artifact_update = event["result"]["artifactUpdate"]
+        assert artifact_update["taskId"]
+        assert artifact_update["artifact"]["parts"]
       end
     end
 
-    test "last event is status update with final: true", %{agent: agent} do
+    test "last event is a terminal status update", %{agent: agent} do
       conn = stream_conn(message_params(), agent)
       events = parse_sse_events(conn)
       last = List.last(events)
 
-      assert last["result"]["kind"] == "status-update"
-      assert last["result"]["final"] == true
-      assert last["result"]["status"]["state"] == "TASK_STATE_COMPLETED"
+      status_update = last["result"]["statusUpdate"]
+      refute Map.has_key?(status_update, "final")
+      assert status_update["status"]["state"] == "TASK_STATE_COMPLETED"
     end
 
     test "all events are valid JSON-RPC envelopes", %{agent: agent} do
@@ -168,7 +169,7 @@ defmodule A2A.Plug.SSETest do
         |> A2A.Plug.call(opts)
 
       [first | _] = parse_sse_events(conn)
-      task_meta = first["result"]["metadata"]
+      task_meta = first["result"]["task"]["metadata"]
       assert task_meta["env"] == "prod"
       assert task_meta["tenant_id"] == "t-1"
       assert task_meta["request_key"] == "val"
@@ -233,9 +234,9 @@ defmodule A2A.Plug.SSETest do
       events = parse_sse_events(conn)
 
       last = List.last(events)
-      assert last["result"]["kind"] == "status-update"
-      assert last["result"]["final"] == true
-      assert last["result"]["status"]["state"] == "TASK_STATE_FAILED"
+      status_update = last["result"]["statusUpdate"]
+      refute Map.has_key?(status_update, "final")
+      assert status_update["status"]["state"] == "TASK_STATE_FAILED"
     end
   end
 end

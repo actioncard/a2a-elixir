@@ -54,6 +54,8 @@ if Code.ensure_loaded?(Req) do
     echoed back.
     """
 
+    require Logger
+
     alias A2A.JSONRPC.Error
 
     @type target :: t() | A2A.AgentCard.t() | String.t()
@@ -616,15 +618,23 @@ if Code.ensure_loaded?(Req) do
       end)
     end
 
+    # A dropped event is invisible to the caller, so it has to be loud here:
+    # an encoder/decoder disagreement silently truncated every stream until
+    # this logged.
     defp decode_sse_events(events) do
       Enum.flat_map(events, fn
         %{"result" => result} ->
           case A2A.JSON.decode(result, :event) do
-            {:ok, decoded} -> [decoded]
-            {:error, _} -> []
+            {:ok, decoded} ->
+              [decoded]
+
+            {:error, reason} ->
+              Logger.warning("A2A.Client: dropped undecodable stream event: #{inspect(reason)}")
+              []
           end
 
-        _other ->
+        other ->
+          Logger.warning("A2A.Client: dropped stream frame with no result: #{inspect(other)}")
           []
       end)
     end

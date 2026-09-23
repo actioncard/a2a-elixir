@@ -7,7 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** streaming events now use the v1.0 `StreamResponse` wrapper.
+  Every SSE `result` carries exactly one of `task`, `message`, `statusUpdate`
+  or `artifactUpdate`, instead of a flat object discriminated by `kind`. The
+  `kind` field is gone from status and artifact events, and `final` is gone
+  from status events — v1.0 removed it, and a stream now ends when the task
+  reaches a terminal or interrupted state.
+
+  `%A2A.Event.StatusUpdate{}` keeps its `:final` field: the decoder honours an
+  explicit `"final"` from a v0.3 peer and otherwise reconstructs it from the
+  state, so matching on `final: true` still works. Decoding also still accepts
+  the v0.3 `kind` shape, so a v1.0 client can consume an older peer's stream.
+
+  This fixes a bug in which the opening task snapshot was dropped on every
+  stream: the encoder omitted any discriminator and `A2A.Client` silently
+  discarded what it could not decode. Undecodable frames are now logged rather
+  than dropped in silence.
+
 ### Added
+
 
 - `{:message, parts}` agent reply — `message/send` can now answer with a bare
   `Message` instead of a `Task`, the other half of the spec's

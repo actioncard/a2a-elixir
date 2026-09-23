@@ -245,11 +245,18 @@ defmodule A2A.JSONTest do
       event = StatusUpdate.new("tsk-1", status, context_id: "ctx-1", final: false)
       {:ok, map} = JSON.encode(event)
 
-      assert map["kind"] == "status-update"
       assert map["taskId"] == "tsk-1"
       assert map["contextId"] == "ctx-1"
-      assert map["final"] == false
       assert map["status"]["state"] == "TASK_STATE_WORKING"
+    end
+
+    test "omits kind and final, which v1.0 dropped from the event" do
+      status = Task.Status.new(:completed)
+      event = StatusUpdate.new("tsk-1", status, final: true)
+      {:ok, map} = JSON.encode(event)
+
+      refute Map.has_key?(map, "kind")
+      refute Map.has_key?(map, "final")
     end
   end
 
@@ -266,7 +273,7 @@ defmodule A2A.JSONTest do
 
       {:ok, map} = JSON.encode(event)
 
-      assert map["kind"] == "artifact-update"
+      refute Map.has_key?(map, "kind")
       assert map["taskId"] == "tsk-1"
       assert map["contextId"] == "ctx-1"
       assert map["append"] == true
