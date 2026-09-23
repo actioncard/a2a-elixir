@@ -24,12 +24,13 @@ closed by deleting its line in the same commit as the fix.
 
 ### Current Results
 
-`bin/tck all` — 84 passed, 2 failed (all baselined), 179 skipped. The skips are
+`bin/tck all` — 92 passed, 2 failed (all baselined), 171 skipped. The skips are
 capability- and transport-gated tests, not failures.
 
-The TCK server declares `capabilities.streaming` (#84), which is why the SSE
-suites run at all. Push notifications and the authenticated extended card are
-still undeclared, so those families continue to skip — see below.
+The TCK server declares `capabilities.streaming` (#84) and
+`capabilities.pushNotifications` (#93), which is why those suites run at all.
+The authenticated extended card is still undeclared, so that family continues
+to skip — see below.
 
 | Suite area | What it covers | Notes |
 |------------|----------------|-------|
@@ -54,7 +55,6 @@ Two node ids, one cause, listed in `test/tck/expected-failures.txt`.
 | Extended agent card | `supportsAuthenticatedExtendedCard` not declared | #100 |
 | In-task authentication | Agent doesn't trigger `auth-required` state | Optional — agent-level decision |
 | TLS / certificate validation | TCK server runs plain HTTP on localhost | Deploy-time concern, not library |
-| Push notification capabilities | `pushNotifications` not declared | #93, blocked by #92 |
 | `CORE-MULTI-005` context inference | Tasks get no `contextId` when the client sends none, so the test cannot run | #101 |
 | gRPC / HTTP+JSON transports | Single transport (JSON-RPC only) | gRPC / REST Transport Bindings (below) |
 | OAuth2 metadata URL | No OAuth2 scheme configured | Client-Side OAuth 2.0 Flows (below) |
@@ -67,11 +67,10 @@ and have not been re-derived; treat them as intent, not literal paths.
 
 | # | Feature | TCK tests enabled |
 |---|---------|-------------------|
-| 1 | **Push Notifications** | `capabilities/` push notification tests; mandatory push config method tests |
-| 2 | **Authenticated Extended Card** (#100) | `mandatory/protocol/test_extended_agent_card.py`; `capabilities/` extended card tests |
+| 1 | **Authenticated Extended Card** (#100) | `mandatory/protocol/test_extended_agent_card.py`; `capabilities/` extended card tests |
+| 2 | **Task Resubscribe Streaming** (#99) | `STREAM-SUB-004`; `capabilities/` resubscribe streaming tests |
 | 3 | **gRPC Transport Binding** | `transport-equivalence` category (functional equivalence across transports) |
 | 4 | **REST Transport Binding** | `transport-equivalence` category |
-| 5 | **Task Resubscribe Streaming** (#99) | `STREAM-SUB-004`; `capabilities/` resubscribe streaming tests |
 
 ---
 
@@ -79,21 +78,14 @@ and have not been re-derived; treat them as intent, not literal paths.
 
 ### Push Notifications
 
-Config CRUD is implemented; **webhook delivery is not**. The four
-`tasks/pushNotificationConfig/*` methods (set, get, list, delete) store and
-serve configs, but no HTTP POST is ever made to a registered URL.
-
-Because of that, the methods are gated on the declared capability and a server
-that does not opt in still returns `-32003 PushNotificationNotSupportedError`,
-exactly as before:
+Config CRUD and webhook delivery are both implemented. The methods stay gated
+on the declared capability, and a server that does not opt in returns
+`-32003 PushNotificationNotSupportedError`:
 
 ```elixir
 {A2A.Plug, agent: MyAgent, base_url: url,
  agent_card_opts: [capabilities: %{push_notifications: true}]}
 ```
-
-Declaring the capability today therefore advertises delivery this library does
-not perform — treat it as an assertion that delivery is wired up elsewhere.
 
 Implemented:
 
@@ -107,24 +99,34 @@ Implemented:
 - Configs are scoped to an existing task: registering one for an unknown task
   returns `-32001 TaskNotFoundError`, and every operation runs through the
   `:authorize_task` hook
+- `configuration.taskPushNotificationConfig` honoured on `message/send`, so a
+  client can register a webhook on the initial send rather than through CRUD.
+  It runs the same `:authorize_task` hook under `:push_set` that the CRUD
+  method does, and delivers the task's current status once on registration —
+  a task that finishes in a single turn changed state before the webhook
+  existed, and the spec wants at least one delivery per configured webhook
+- `A2A.PushNotificationSender` behaviour, with `A2A.PushNotificationSender.HTTP`
+  as the default when `:req` is available. Every task state change POSTs a
+  `StreamResponse` status update to each registered webhook, carrying the
+  config's credentials as an `Authorization` header
+- Delivery runs in a spawned process, never the agent's, so a hanging webhook
+  cannot stall task processing. Each attempt is reported through
+  `[:a2a, :push_notification, :delivery]` telemetry
+- Bounded retry with exponential backoff and a per-attempt timeout
 
-Still required for full support:
+Optional hardening on the HTTP sender, off by default because the spec makes
+both a SHOULD and enabling them breaks local development and the compliance
+suite's own `localhost` receiver:
 
-- Webhook delivery when task state changes (HTTP POST to configured URL)
-- An `A2A.PushNotificationSender` behaviour, whose callback shape should be
-  driven by that delivery path rather than guessed ahead of it
-- `configuration.taskPushNotificationConfig` honoured on `message/send` — the
-  TCK's delivery tests register the config inline rather than through CRUD
-- Origin validation and credential transmission security
+- `:require_https` — reject plain-HTTP webhook URLs
+- `:block_private_ips` — reject loopback, link-local and RFC 1918 hosts
 
-Webhook security (informed by a2a_ex):
+Still open, and tracked separately since neither the spec nor the TCK requires
+them and no consumer is driving a signature format yet:
 
 - HMAC-SHA256 signature generation/verification on webhook payloads
 - Replay protection via timestamp and nonce headers
-- Private IP range blocking (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)
-  to prevent SSRF
 - Constant-time signature comparison to avoid timing attacks
-- HTTPS enforcement on webhook URLs
 
 ### Authenticated Extended Card
 

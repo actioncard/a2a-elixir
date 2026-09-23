@@ -28,6 +28,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Push notification webhook delivery. Every task state change now POSTs a
+  `StreamResponse` status update to each webhook registered for that task,
+  carrying the config's credentials as an `Authorization` header. Adds the
+  `A2A.PushNotificationSender` behaviour and `A2A.PushNotificationSender.HTTP`,
+  the default when the optional `:req` dependency is present. Override it with
+  `MyAgent.start_link(push_sender: {MyModule, opts})`, or pass `nil` to
+  disable delivery.
+
+  Delivery runs in a process spawned off the agent, so a slow or hanging
+  webhook cannot stall task processing, and each attempt is reported through a
+  new `[:a2a, :push_notification, :delivery]` telemetry event. The HTTP sender
+  retries with exponential backoff inside a per-attempt timeout.
+
+  `configuration.taskPushNotificationConfig` is now honoured on `message/send`,
+  so a client can register a webhook on the initial send rather than through
+  the CRUD methods. The config attaches to the task the call creates, runs the
+  same `:authorize_task` hook under `:push_set` that the CRUD method does, and
+  receives the task's current status once on registration.
+
+  The HTTP sender can reject plain-HTTP URLs (`:require_https`) and private or
+  loopback hosts (`:block_private_ips`). Both are off by default: the spec
+  makes them a SHOULD rather than a MUST, and enabling them by default would
+  break webhook receivers on `localhost`.
+
 
 - `{:message, parts}` agent reply — `message/send` can now answer with a bare
   `Message` instead of a `Task`, the other half of the spec's

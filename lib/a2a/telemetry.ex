@@ -85,5 +85,26 @@ defmodule A2A.Telemetry do
         from: atom() | nil,
         to: atom()
       }
+
+  ### `[:a2a, :push_notification, :delivery]`
+
+  Emitted once per registered webhook per task state change, after the
+  `A2A.PushNotificationSender` callback returns. Delivery is best-effort and
+  runs off the agent process, so this event is the only report of whether a
+  webhook was actually reached.
+
+  **Measurements:**
+
+      %{duration: integer()}
+
+  **Metadata:**
+
+      %{
+        task_id: String.t(),
+        context_id: String.t() | nil,
+        config_id: String.t() | nil,
+        url: String.t(),
+        result: :ok | {:error, term()}
+      }
   """
 end
