@@ -8,12 +8,3 @@
 # this file in the same commit.
 #
 # Comments and blank lines are ignored; order does not matter.
-
-
-# --- #99: tasks/resubscribe is unimplemented ----------------------------------
-# STREAM-SUB-004 wants -32001 TaskNotFoundError for an unknown task; the stub
-# answers -32004 UnsupportedOperationError for every task. Two node ids, one
-# cause. Gated on capabilities.streaming, so declaring it (#84) made these
-# mandatory.
-tests/compatibility/core_operations/test_requirements.py::test_must_requirement[STREAM-SUB-004-jsonrpc]
-tests/compatibility/jsonrpc/test_sse_streaming.py::TestSseSubscribeToTask::test_subscribe_nonexistent_task_returns_error

@@ -9,7 +9,8 @@ defmodule A2A.Agent.State do
           contexts: %{String.t() => [String.t()]},
           push_configs: %{push_key() => A2A.PushNotificationConfig.t()},
           task_store: {module(), A2A.TaskStore.ref()} | nil,
-          push_sender: {module(), keyword()} | nil
+          push_sender: {module(), keyword()} | nil,
+          subscribers: %{String.t() => [{pid(), reference()}]}
         }
 
   defstruct module: nil,
@@ -17,7 +18,61 @@ defmodule A2A.Agent.State do
             contexts: %{},
             push_configs: %{},
             task_store: nil,
-            push_sender: nil
+            push_sender: nil,
+            subscribers: %{}
+
+  @doc """
+  Registers `pid` as a subscriber to `task_id`, monitoring it.
+
+  The monitor is the whole cleanup story: a subscriber is an SSE connection
+  process, and when the client disconnects that process dies and takes its
+  registration with it.
+  """
+  @spec add_subscriber(t(), String.t(), pid()) :: t()
+  def add_subscriber(state, task_id, pid) do
+    ref = Process.monitor(pid)
+    entries = Map.get(state.subscribers, task_id, [])
+    %{state | subscribers: Map.put(state.subscribers, task_id, [{pid, ref} | entries])}
+  end
+
+  @doc """
+  Removes the subscriber registered under `ref`, wherever it is registered.
+  """
+  @spec drop_subscriber(t(), reference()) :: t()
+  def drop_subscriber(state, ref) do
+    subscribers =
+      state.subscribers
+      |> Enum.map(fn {task_id, entries} ->
+        {task_id, Enum.reject(entries, fn {_pid, entry_ref} -> entry_ref == ref end)}
+      end)
+      |> Enum.reject(fn {_task_id, entries} -> entries == [] end)
+      |> Map.new()
+
+    %{state | subscribers: subscribers}
+  end
+
+  @doc """
+  Drops every subscriber of `task_id`, demonitoring each.
+
+  Used once a task is terminal: the stream is over, so the registrations
+  would otherwise linger until each connection happened to close.
+  """
+  @spec drop_subscribers(t(), String.t()) :: t()
+  def drop_subscribers(state, task_id) do
+    for {_pid, ref} <- Map.get(state.subscribers, task_id, []) do
+      Process.demonitor(ref, [:flush])
+    end
+
+    %{state | subscribers: Map.delete(state.subscribers, task_id)}
+  end
+
+  @doc """
+  The pids subscribed to `task_id`.
+  """
+  @spec subscribers_for(t(), String.t()) :: [pid()]
+  def subscribers_for(state, task_id) do
+    for {pid, _ref} <- Map.get(state.subscribers, task_id, []), do: pid
+  end
 
   @doc """
   Transitions a task to a new state, updating the status.

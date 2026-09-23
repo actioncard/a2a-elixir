@@ -334,6 +334,7 @@ defmodule A2A.Agent do
             task = maybe_wrap_stream(task, from)
             state = A2A.Agent.State.put_task(state, task)
             A2A.PushNotification.deliver(state, task)
+            state = notify_subscribers(state, task)
             {:reply, {:ok, task}, state}
 
           {:error, reason} ->
@@ -371,6 +372,7 @@ defmodule A2A.Agent do
                   task = A2A.Agent.State.transition(task, :canceled)
                   state = A2A.Agent.State.put_task(state, task)
                   A2A.PushNotification.deliver(state, task)
+                  state = notify_subscribers(state, task)
                   {:reply, :ok, state}
 
                 {:error, reason} ->
@@ -413,6 +415,30 @@ defmodule A2A.Agent do
         {:reply, result, state}
       end
 
+      def handle_call({:subscribe, task_id}, {pid, _tag}, state) do
+        case A2A.Agent.State.get_task(state, task_id) do
+          {:ok, task} ->
+            if A2A.Task.terminal?(task) do
+              {:reply, {:error, :terminal}, state}
+            else
+              # Never hand back metadata[:stream]: enumerating it replays the
+              # agent's output from the start and casts a second
+              # {:stream_done, …}, duplicating artifacts and history. A
+              # subscriber receives pushed events instead.
+              snapshot = A2A.Task.strip_stream_metadata(task)
+              {:reply, {:ok, snapshot}, A2A.Agent.State.add_subscriber(state, task_id, pid)}
+            end
+
+          {:error, :not_found} ->
+            {:reply, {:error, :not_found}, state}
+        end
+      end
+
+      @impl GenServer
+      def handle_info({:DOWN, ref, :process, _pid, _reason}, state) do
+        {:noreply, A2A.Agent.State.drop_subscriber(state, ref)}
+      end
+
       @impl GenServer
       def handle_cast({:deliver_push, task_id}, state) do
         case A2A.Agent.State.get_task(state, task_id) do
@@ -434,10 +460,28 @@ defmodule A2A.Agent do
             task = A2A.Agent.State.transition(task, :completed)
             state = A2A.Agent.State.put_task(state, task)
             A2A.PushNotification.deliver(state, task)
+            state = notify_subscribers(state, task)
             {:noreply, state}
 
           {:error, :not_found} ->
             {:noreply, state}
+        end
+      end
+
+      defp notify_subscribers(state, task) do
+        snapshot = A2A.Task.strip_stream_metadata(task)
+
+        for pid <- A2A.Agent.State.subscribers_for(state, task.id) do
+          send(pid, {:a2a_task_event, task.id, snapshot})
+        end
+
+        # A terminal task ends every stream attached to it, so the
+        # registrations go with it rather than lingering until each
+        # connection happens to close.
+        if A2A.Task.terminal?(task) do
+          A2A.Agent.State.drop_subscribers(state, task.id)
+        else
+          state
         end
       end
 

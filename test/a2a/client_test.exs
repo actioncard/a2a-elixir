@@ -453,6 +453,69 @@ defmodule A2A.ClientTest do
     end
   end
 
+  describe "resubscribe/3" do
+    @tag timeout: 10_000
+    test "reattaches to a running task and ends at the terminal state" do
+      agent = start_supervised!({A2A.Test.MultiTurnAgent, [name: nil]})
+
+      plug_opts = [
+        agent: agent,
+        base_url: "http://localhost",
+        agent_card_opts: [capabilities: %{streaming: true}]
+      ]
+
+      {:ok, server} =
+        Bandit.start_link(plug: {A2A.Plug, plug_opts}, port: 0, ip: :loopback)
+
+      {:ok, {_ip, port}} = ThousandIsland.listener_info(server)
+      client = Client.new("http://127.0.0.1:#{port}")
+
+      {:ok, task} = A2A.call(agent, "order")
+      assert {:ok, stream} = Client.resubscribe(client, task.id)
+
+      # Complete the task once the subscription is live, so the stream has a
+      # transition to carry before it closes.
+      spawn(fn ->
+        Process.sleep(100)
+        A2A.call(agent, "large", task_id: task.id)
+      end)
+
+      events = Enum.to_list(stream)
+
+      assert [%A2A.Task{} = snapshot | rest] = events
+      assert snapshot.id == task.id
+      assert snapshot.status.state == :input_required
+
+      assert %A2A.Event.StatusUpdate{status: %{state: :completed}} = List.last(rest)
+
+      GenServer.stop(server)
+    end
+
+    @tag timeout: 10_000
+    test "returns a decoded error for an unknown task" do
+      agent = start_supervised!({A2A.Test.MultiTurnAgent, [name: nil]})
+
+      plug_opts = [
+        agent: agent,
+        base_url: "http://localhost",
+        agent_card_opts: [capabilities: %{streaming: true}]
+      ]
+
+      {:ok, server} =
+        Bandit.start_link(plug: {A2A.Plug, plug_opts}, port: 0, ip: :loopback)
+
+      {:ok, {_ip, port}} = ThousandIsland.listener_info(server)
+      client = Client.new("http://127.0.0.1:#{port}")
+
+      # The rejection arrives as a JSON body on a 200, so it must be decoded
+      # rather than fed to the SSE parser and dropped as an unreadable frame.
+      assert {:error, %A2A.JSONRPC.Error{code: -32_001}} =
+               Client.resubscribe(client, "tsk-nope")
+
+      GenServer.stop(server)
+    end
+  end
+
   defmodule SSEPlug do
     @moduledoc false
     @behaviour Plug

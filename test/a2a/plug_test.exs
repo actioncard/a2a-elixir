@@ -571,13 +571,57 @@ defmodule A2A.PlugTest do
   # -- tasks/resubscribe -------------------------------------------------------
 
   describe "tasks/resubscribe" do
-    test "returns unsupported_operation", %{agent: agent} do
+    test "returns unsupported_operation when streaming is undeclared", %{agent: agent} do
       conn =
         json_rpc_conn("tasks/resubscribe", %{"id" => "tsk-1"})
         |> A2A.Plug.call(plug_opts(agent))
 
-      body = json_body(conn)
-      assert body["error"]["code"] == -32_004
+      assert json_body(conn)["error"]["code"] == -32_004
+    end
+
+    test "returns task_not_found for an unknown task", %{agent: agent} do
+      conn =
+        json_rpc_conn("tasks/resubscribe", %{"id" => "tsk-nope"})
+        |> A2A.Plug.call(streaming_opts(agent))
+
+      # STREAM-SUB-004: an unknown task is not found, not unsupported.
+      assert json_body(conn)["error"]["code"] == -32_001
+    end
+
+    test "returns unsupported_operation for a terminal task", %{agent: agent} do
+      opts = streaming_opts(agent)
+      task_id = create_task(opts)
+
+      conn =
+        json_rpc_conn("tasks/resubscribe", %{"id" => task_id})
+        |> A2A.Plug.call(opts)
+
+      # STREAM-SUB-003: a finished task has no stream left to join.
+      assert json_body(conn)["error"]["code"] == -32_004
+    end
+
+    test "accepts the PascalCase SubscribeToTask alias", %{agent: agent} do
+      conn =
+        json_rpc_conn("SubscribeToTask", %{"id" => "tsk-nope"})
+        |> A2A.Plug.call(streaming_opts(agent))
+
+      assert json_body(conn)["error"]["code"] == -32_001
+    end
+
+    test "denies when the authorizer rejects :resubscribe" do
+      agent = start_supervised!({A2A.Test.MultiTurnAgent, [name: nil]})
+
+      opts =
+        streaming_opts(agent, authorize_task: fn op, _task, _ctx -> op != :resubscribe end)
+
+      task_id = create_task(opts)
+
+      conn =
+        json_rpc_conn("tasks/resubscribe", %{"id" => task_id})
+        |> A2A.Plug.call(opts)
+
+      # Denials report not-found so task ids are not leaked.
+      assert json_body(conn)["error"]["code"] == -32_001
     end
   end
 
@@ -1012,6 +1056,10 @@ defmodule A2A.PlugTest do
 
       assert listed == []
     end
+  end
+
+  defp streaming_opts(agent, extra \\ []) do
+    plug_opts(agent, [agent_card_opts: [capabilities: %{streaming: true}]] ++ extra)
   end
 
   defp push_opts(agent, extra \\ []) do

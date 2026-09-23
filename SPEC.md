@@ -24,8 +24,8 @@ closed by deleting its line in the same commit as the fix.
 
 ### Current Results
 
-`bin/tck all` — 92 passed, 2 failed (all baselined), 171 skipped. The skips are
-capability- and transport-gated tests, not failures.
+`bin/tck all` — 99 passed, 0 failed, 166 skipped. The skips are capability-
+and transport-gated tests, not failures.
 
 The TCK server declares `capabilities.streaming` (#84) and
 `capabilities.pushNotifications` (#93), which is why those suites run at all.
@@ -42,11 +42,8 @@ to skip — see below.
 
 ### Known Gaps
 
-Two node ids, one cause, listed in `test/tck/expected-failures.txt`.
-
-| Tests | Gap | Issue |
-|-------|-----|-------|
-| `STREAM-SUB-004` (2 node ids) | `tasks/resubscribe` is unimplemented — answers `-32004` where the spec wants `-32001` for an unknown task | #99 |
+None. `test/tck/expected-failures.txt` holds no entries — every test the suite
+runs against us passes, so any new failure is a regression.
 
 ### Skipped (Expected)
 
@@ -68,7 +65,6 @@ and have not been re-derived; treat them as intent, not literal paths.
 | # | Feature | TCK tests enabled |
 |---|---------|-------------------|
 | 1 | **Authenticated Extended Card** (#100) | `mandatory/protocol/test_extended_agent_card.py`; `capabilities/` extended card tests |
-| 2 | **Task Resubscribe Streaming** (#99) | `STREAM-SUB-004`; `capabilities/` resubscribe streaming tests |
 | 3 | **gRPC Transport Binding** | `transport-equivalence` category (functional equivalence across transports) |
 | 4 | **REST Transport Binding** | `transport-equivalence` category |
 
@@ -177,9 +173,30 @@ outstanding:
 
 ### Task Resubscribe Streaming
 
-`tasks/resubscribe` is defined in the spec for reconnecting to an active SSE
-stream after connection drops. Not yet implemented — would need the runtime to
-track active streams per task and resume from the correct point.
+`tasks/resubscribe` (`SubscribeToTask`) is implemented. Subscribing opens an
+SSE stream whose first event is the task as it stands, followed by a status
+update per state change, ending when the task reaches a terminal state. An
+unknown task answers `-32001 TaskNotFoundError` and one that has already
+finished answers `-32004 UnsupportedOperationError`; both are gated on the
+declared `streaming` capability and run the `:authorize_task` hook under
+`:resubscribe`.
+
+Subscribers are held in the agent's own state — `AGENTS.md` rules out a
+supervision tree, so there is nowhere else to keep them — and each is
+monitored, so a dropped connection deregisters itself. `A2A.Plug`'s
+`:resubscribe_timeout` (default 60s) closes a stream that goes idle, since a
+task that never terminates would otherwise pin its connection process open.
+
+Two deliberate limits:
+
+- **Events before the subscription are not replayed.** A subscriber sees the
+  task snapshot and everything after it, not the artifacts already produced.
+  Pair with `tasks/get` for the full history.
+- **The agent's own stream is never re-enumerated.** A task still holds its
+  source enumerable in `metadata[:stream]`, and enumerating it replays from
+  the start rather than attaching — which would duplicate the task's
+  artifacts and history. Resubscribe reads the stored task and waits for
+  pushed events instead.
 
 ---
 

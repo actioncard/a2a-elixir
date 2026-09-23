@@ -28,6 +28,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `tasks/resubscribe` (`SubscribeToTask`) reattaches to a running task's event
+  stream. The first SSE event is the task as it stands, followed by a status
+  update per state change, ending when the task reaches a terminal state.
+  `A2A.Client.resubscribe/3` is the client half.
+
+  An unknown task answers `-32001 TaskNotFoundError` and an already-finished
+  one `-32004 UnsupportedOperationError`, replacing the blanket `-32004` the
+  method used to return for everything. It is gated on the declared `streaming`
+  capability and runs the `:authorize_task` hook under a new `:resubscribe`
+  operation.
+
+  Subscribers live in the agent's own state and are monitored, so a dropped
+  connection deregisters itself. `A2A.Plug` gains `:resubscribe_timeout`
+  (default `60_000` ms), which closes a stream that goes idle so a task that
+  never terminates cannot pin its connection process open.
+
+  Two deliberate limits: events produced before the subscription are not
+  replayed, and the agent's own stream enumerable is never re-enumerated —
+  doing so would replay it from the start and duplicate the task's artifacts
+  and history.
+
 - Push notification webhook delivery. Every task state change now POSTs a
   `StreamResponse` status update to each webhook registered for that task,
   carrying the config's credentials as an `Authorization` header. Adds the
