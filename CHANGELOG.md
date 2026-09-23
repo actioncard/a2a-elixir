@@ -7,25 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- **Breaking:** streaming events now use the v1.0 `StreamResponse` wrapper.
-  Every SSE `result` carries exactly one of `task`, `message`, `statusUpdate`
-  or `artifactUpdate`, instead of a flat object discriminated by `kind`. The
-  `kind` field is gone from status and artifact events, and `final` is gone
-  from status events — v1.0 removed it, and a stream now ends when the task
-  reaches a terminal or interrupted state.
-
-  `%A2A.Event.StatusUpdate{}` keeps its `:final` field: the decoder honours an
-  explicit `"final"` from a v0.3 peer and otherwise reconstructs it from the
-  state, so matching on `final: true` still works. Decoding also still accepts
-  the v0.3 `kind` shape, so a v1.0 client can consume an older peer's stream.
-
-  This fixes a bug in which the opening task snapshot was dropped on every
-  stream: the encoder omitted any discriminator and `A2A.Client` silently
-  discarded what it could not decode. Undecodable frames are now logged rather
-  than dropped in silence.
-
 ### Added
 
 - `tasks/resubscribe` (`SubscribeToTask`) reattaches to a running task's event
@@ -169,28 +150,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   echoed value. Missing/empty headers are interpreted as `"0.3"`
   (spec §3.6.2) and only `Major.Minor` is significant.
 
-### Fixed
-
-- Optional callback detection no longer depends on the module happening to be
-  loaded. `A2A.JSONRPC` and `A2A.Agent.State` called `function_exported?/3`
-  without `Code.ensure_loaded?/1`, which answers `false` for a module that has
-  not been loaded yet — so under lazy loading a handler implementing
-  `handle_list/2`, or a task store implementing `list_all/2`, could be treated
-  as implementing neither.
-- `message/send` now honours `configuration.historyLength`, truncating the
-  returned task's history the same way `tasks/get` already did. It was
-  previously ignored, so the full history came back regardless.
-- `historyLength` is now also accepted under its protobuf spelling
-  `history_length` on `tasks/get`, `tasks/cancel` and `tasks/resubscribe`.
-  The spec and the REST binding use `historyLength`, but some JSON-RPC
-  clients send the proto field name and the reference implementation accepts
-  both; previously the limit was silently ignored.
-- `message/send` and `message/stream` with an unknown `taskId` now return
-  `-32001 TaskNotFoundError` instead of `-32603 InternalError`
-- `message/send` and `message/stream` targeting a task in a terminal state now
-  return `-32004 UnsupportedOperationError` instead of `-32603 InternalError`
-
 ### Changed
+
+- **Breaking:** streaming events now use the v1.0 `StreamResponse` wrapper.
+  Every SSE `result` carries exactly one of `task`, `message`, `statusUpdate`
+  or `artifactUpdate`, instead of a flat object discriminated by `kind`. The
+  `kind` field is gone from status and artifact events, and `final` is gone
+  from status events — v1.0 removed it, and a stream now ends when the task
+  reaches a terminal or interrupted state.
+
+  `%A2A.Event.StatusUpdate{}` keeps its `:final` field: the decoder honours an
+  explicit `"final"` from a v0.3 peer and otherwise reconstructs it from the
+  state, so matching on `final: true` still works. Decoding also still accepts
+  the v0.3 `kind` shape, so a v1.0 client can consume an older peer's stream.
+
+  This fixes a bug in which the opening task snapshot was dropped on every
+  stream: the encoder omitted any discriminator and `A2A.Client` silently
+  discarded what it could not decode. Undecodable frames are now logged rather
+  than dropped in silence.
 
 - **Breaking:** A2A-specific errors (-32001 to -32009) now serialize `data` as
   an array carrying a `google.rpc.ErrorInfo` object, per A2A v1.0
@@ -247,6 +224,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The pin existed only to keep OTP 25 compiling; this library verifies JWTs
   through Joken and never calls JOSE directly, so jose is now an ordinary
   transitive dependency of the optional `joken` dep.
+
+### Fixed
+
+- A `{:stream, …}` reply whose enumerable raises, or whose client disconnects
+  mid-stream, no longer stores the task as `completed`. The finalizing hook
+  runs however enumeration ends, so it reported success for every ending —
+  `tasks/get`, push notifications and resubscribers were all told a failed
+  stream had succeeded, and handed its partial output as the result. The task
+  is now marked `failed`; the parts it managed to emit are still kept.
+
+- Optional callback detection no longer depends on the module happening to be
+  loaded. `A2A.JSONRPC` and `A2A.Agent.State` called `function_exported?/3`
+  without `Code.ensure_loaded?/1`, which answers `false` for a module that has
+  not been loaded yet — so under lazy loading a handler implementing
+  `handle_list/2`, or a task store implementing `list_all/2`, could be treated
+  as implementing neither.
+- `message/send` now honours `configuration.historyLength`, truncating the
+  returned task's history the same way `tasks/get` already did. It was
+  previously ignored, so the full history came back regardless.
+- `historyLength` is now also accepted under its protobuf spelling
+  `history_length` on `tasks/get`, `tasks/cancel` and `tasks/resubscribe`.
+  The spec and the REST binding use `historyLength`, but some JSON-RPC
+  clients send the proto field name and the reference implementation accepts
+  both; previously the limit was silently ignored.
+- `message/send` and `message/stream` with an unknown `taskId` now return
+  `-32001 TaskNotFoundError` instead of `-32603 InternalError`
+- `message/send` and `message/stream` targeting a task in a terminal state now
+  return `-32004 UnsupportedOperationError` instead of `-32603 InternalError`
 
 ## [0.2.0] - 2026-03-06
 

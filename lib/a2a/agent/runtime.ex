@@ -59,17 +59,25 @@ defmodule A2A.Agent.Runtime do
 
   @doc """
   Wraps a stream so that consuming it notifies the agent GenServer to
-  finalize the task (transition to `:completed`, create artifact).
+  finalize the task (create the artifact, transition to a terminal state).
+
+  The notification carries how the enumeration ended. `Stream.transform/5`
+  runs its `last_fun` only on normal completion, while the `after_fun` runs
+  however enumeration stops — so the difference between the two is what
+  separates a stream that finished from one that raised or was abandoned
+  when the client disconnected. Without it the cleanup hook reports success
+  for every ending, and a failed stream is stored as completed.
   """
   @spec wrap_stream(Enumerable.t(), GenServer.server(), String.t()) :: Enumerable.t()
   def wrap_stream(enum, server, task_id) do
     Stream.transform(
       enum,
-      fn -> [] end,
-      fn part, acc -> {[part], [part | acc]} end,
-      fn acc ->
+      fn -> {[], :incomplete} end,
+      fn part, {acc, outcome} -> {[part], {[part | acc], outcome}} end,
+      fn {acc, _outcome} -> {[], {acc, :complete}} end,
+      fn {acc, outcome} ->
         parts = Enum.reverse(acc)
-        GenServer.cast(server, {:stream_done, task_id, parts})
+        GenServer.cast(server, {:stream_done, task_id, parts, outcome})
       end
     )
   end

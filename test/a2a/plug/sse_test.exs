@@ -37,6 +37,16 @@ defmodule A2A.Plug.SSETest do
     }
   end
 
+  defp wait_for_terminal(agent, task_id, attempts \\ 100) do
+    {:ok, task} = GenServer.call(agent, {:get_task, task_id})
+
+    cond do
+      A2A.Task.terminal?(task) -> :ok
+      attempts == 0 -> flunk("task never reached a terminal state")
+      true -> Process.sleep(5) && wait_for_terminal(agent, task_id, attempts - 1)
+    end
+  end
+
   defp parse_sse_events(conn) do
     conn.resp_body
     |> String.split("\n\n", trim: true)
@@ -237,6 +247,32 @@ defmodule A2A.Plug.SSETest do
       status_update = last["result"]["statusUpdate"]
       refute Map.has_key?(status_update, "final")
       assert status_update["status"]["state"] == "TASK_STATE_FAILED"
+    end
+
+    test "a stream that raises stores the task as failed, not completed" do
+      agent = start_supervised!({A2A.Test.CrashingStreamAgent, [name: nil]})
+      conn = stream_conn(message_params(), agent)
+      [first | _] = parse_sse_events(conn)
+      task_id = first["result"]["task"]["id"]
+
+      # The wire said failed; anything reading the task afterwards — tasks/get,
+      # a webhook, a subscriber — has to agree with it.
+      wait_for_terminal(agent, task_id)
+      assert {:ok, stored} = GenServer.call(agent, {:get_task, task_id})
+      assert stored.status.state == :failed
+
+      # The parts it managed to emit are still kept.
+      assert [%A2A.Artifact{}] = stored.artifacts
+    end
+
+    test "a fully consumed stream still stores the task as completed", %{agent: agent} do
+      conn = stream_conn(message_params(), agent)
+      [first | _] = parse_sse_events(conn)
+      task_id = first["result"]["task"]["id"]
+
+      wait_for_terminal(agent, task_id)
+      assert {:ok, stored} = GenServer.call(agent, {:get_task, task_id})
+      assert stored.status.state == :completed
     end
   end
 end
