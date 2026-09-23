@@ -92,10 +92,10 @@ base_url = "http://localhost:#{port}"
        [
          agent: TCK.Agent,
          base_url: base_url,
-         # A2A.Plug's streaming gate reads agent_card_opts directly, the same
+         # A2A.Plug's capability gates read agent_card_opts directly, the same
          # source encode_agent_card/2 publishes from, so this cannot advertise a
          # capability the server then refuses.
-         agent_card_opts: [capabilities: %{streaming: true}]
+         agent_card_opts: [capabilities: %{streaming: true, push_notifications: true}]
        ]},
     port: port,
     startup_log: false

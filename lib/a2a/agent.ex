@@ -230,6 +230,10 @@ defmodule A2A.Agent do
 
       - `:name` — process registration name (default: module name)
       - `:task_store` — `{module, opts}` tuple for external task persistence
+      - `:push_sender` — `{module, opts}` implementing
+        `A2A.PushNotificationSender`, used to POST task updates to registered
+        webhooks. Defaults to `A2A.PushNotificationSender.HTTP` when `:req`
+        is available; pass `nil` to disable delivery.
       """
       @spec start_link(keyword()) :: GenServer.on_start()
       def start_link(opts \\ []) do
@@ -284,11 +288,13 @@ defmodule A2A.Agent do
       @impl GenServer
       def init(opts) do
         task_store = Keyword.get(opts, :task_store)
+        push_sender = Keyword.get(opts, :push_sender, A2A.PushNotification.default_sender())
 
         {:ok,
          %A2A.Agent.State{
            module: __MODULE__,
-           task_store: task_store
+           task_store: task_store,
+           push_sender: push_sender
          }}
       end
 
@@ -327,6 +333,7 @@ defmodule A2A.Agent do
           {:ok, {%A2A.Task{} = task, state}} ->
             task = maybe_wrap_stream(task, from)
             state = A2A.Agent.State.put_task(state, task)
+            A2A.PushNotification.deliver(state, task)
             {:reply, {:ok, task}, state}
 
           {:error, reason} ->
@@ -363,6 +370,7 @@ defmodule A2A.Agent do
                 :ok ->
                   task = A2A.Agent.State.transition(task, :canceled)
                   state = A2A.Agent.State.put_task(state, task)
+                  A2A.PushNotification.deliver(state, task)
                   {:reply, :ok, state}
 
                 {:error, reason} ->
@@ -406,6 +414,15 @@ defmodule A2A.Agent do
       end
 
       @impl GenServer
+      def handle_cast({:deliver_push, task_id}, state) do
+        case A2A.Agent.State.get_task(state, task_id) do
+          {:ok, task} -> A2A.PushNotification.deliver(state, task)
+          {:error, :not_found} -> :ok
+        end
+
+        {:noreply, state}
+      end
+
       def handle_cast({:stream_done, task_id, parts}, state) do
         case A2A.Agent.State.get_task(state, task_id) do
           {:ok, task} ->
@@ -416,6 +433,7 @@ defmodule A2A.Agent do
             task = %{task | metadata: Map.delete(task.metadata, :stream)}
             task = A2A.Agent.State.transition(task, :completed)
             state = A2A.Agent.State.put_task(state, task)
+            A2A.PushNotification.deliver(state, task)
             {:noreply, state}
 
           {:error, :not_found} ->

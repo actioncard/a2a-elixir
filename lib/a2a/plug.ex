@@ -266,6 +266,38 @@ if Code.ensure_loaded?(Plug) do
       |> Map.get(:streaming, false)
     end
 
+    # A client may register a webhook on the initial send rather than through
+    # the CRUD methods, which is how the spec's delivery flow reads and how the
+    # compliance suite drives it. The task does not exist until the call
+    # returns, so the config can only be attached to it afterwards.
+    defp register_inline_push_config(agent, %A2A.Task{} = task, params, plug_opts) do
+      with true <- push_notifications_declared?(plug_opts),
+           %{"taskPushNotificationConfig" => raw} when is_map(raw) <-
+             Map.get(params, "configuration"),
+           {:ok, config} <- A2A.JSON.decode(raw, :push_notification_config),
+           # The task is in hand, so this authorizes the same `:push_set`
+           # operation the CRUD method does rather than skipping the hook.
+           {:ok, _task} <- authorize_task(:push_set, task, params, plug_opts) do
+        config = %{
+          config
+          | task_id: task.id,
+            id: config.id || A2A.ID.generate("pcfg")
+        }
+
+        {:ok, _stored} = GenServer.call(agent, {:set_push_config, config})
+
+        # Every state change this task had happened while the webhook was
+        # still unregistered — a task that finishes in one turn would
+        # otherwise never see a delivery, though the spec requires at least
+        # one per configured webhook.
+        GenServer.cast(agent, {:deliver_push, task.id})
+      end
+
+      :ok
+    end
+
+    defp register_inline_push_config(_agent, _result, _params, _plug_opts), do: :ok
+
     defp push_notifications_declared?(opts) do
       opts.agent_card_opts
       |> Keyword.get(:capabilities, %{})
@@ -413,6 +445,7 @@ if Code.ensure_loaded?(Plug) do
 
         case A2A.call(agent, message, call_opts) do
           {:ok, result} ->
+            register_inline_push_config(agent, result, params, plug_opts)
             {:ok, result, _activations} = A2A.Extension.run_response(activations, result, params)
             {:ok, result}
 

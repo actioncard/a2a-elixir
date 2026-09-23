@@ -8,14 +8,16 @@ defmodule A2A.Agent.State do
           tasks: %{String.t() => A2A.Task.t()},
           contexts: %{String.t() => [String.t()]},
           push_configs: %{push_key() => A2A.PushNotificationConfig.t()},
-          task_store: {module(), A2A.TaskStore.ref()} | nil
+          task_store: {module(), A2A.TaskStore.ref()} | nil,
+          push_sender: {module(), keyword()} | nil
         }
 
   defstruct module: nil,
             tasks: %{},
             contexts: %{},
             push_configs: %{},
-            task_store: nil
+            task_store: nil,
+            push_sender: nil
 
   @doc """
   Transitions a task to a new state, updating the status.

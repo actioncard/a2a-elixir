@@ -926,6 +926,94 @@ defmodule A2A.PlugTest do
     end
   end
 
+  describe "inline push config on message/send" do
+    test "registers a config sent as configuration.taskPushNotificationConfig", %{agent: agent} do
+      opts = push_opts(agent)
+
+      params =
+        Map.put(message_params(), "configuration", %{
+          "taskPushNotificationConfig" => %{
+            "url" => "https://example.com/hook",
+            "authentication" => %{"scheme" => "Bearer", "credentials" => "tok"}
+          }
+        })
+
+      task_id =
+        json_rpc_conn("message/send", params)
+        |> A2A.Plug.call(opts)
+        |> json_body()
+        |> get_in(["result", "task", "id"])
+
+      listed =
+        json_rpc_conn("tasks/pushNotificationConfig/list", %{"taskId" => task_id})
+        |> A2A.Plug.call(opts)
+        |> json_body()
+        |> get_in(["result", "configs"])
+
+      assert [config] = listed
+      assert config["url"] == "https://example.com/hook"
+      assert config["taskId"] == task_id
+      # The server assigns an id when the client does not supply one.
+      assert String.starts_with?(config["id"], "pcfg-")
+    end
+
+    test "ignores an inline config when the capability is undeclared", %{agent: agent} do
+      opts = plug_opts(agent)
+
+      params =
+        Map.put(message_params(), "configuration", %{
+          "taskPushNotificationConfig" => %{"url" => "https://example.com/hook"}
+        })
+
+      body =
+        json_rpc_conn("message/send", params)
+        |> A2A.Plug.call(opts)
+        |> json_body()
+
+      # The send still succeeds — an undeclared capability makes the extra
+      # field inert rather than turning a valid request into an error.
+      assert get_in(body, ["result", "task", "id"])
+      refute body["error"]
+    end
+
+    test "does not register when the authorizer denies :push_set", %{agent: agent} do
+      opts = push_opts(agent, authorize_task: fn op, _task, _ctx -> op != :push_set end)
+
+      params =
+        Map.put(message_params(), "configuration", %{
+          "taskPushNotificationConfig" => %{"url" => "https://example.com/hook"}
+        })
+
+      task_id =
+        json_rpc_conn("message/send", params)
+        |> A2A.Plug.call(opts)
+        |> json_body()
+        |> get_in(["result", "task", "id"])
+
+      listed =
+        json_rpc_conn("tasks/pushNotificationConfig/list", %{"taskId" => task_id})
+        |> A2A.Plug.call(opts)
+        |> json_body()
+        |> get_in(["result", "configs"])
+
+      # The inline path must not be a way around the hook the CRUD method runs.
+      assert listed == []
+    end
+
+    test "leaves a send with no configuration untouched", %{agent: agent} do
+      opts = push_opts(agent)
+      task_id = create_task(opts)
+
+      listed =
+        json_rpc_conn("tasks/pushNotificationConfig/list", %{"taskId" => task_id})
+        |> A2A.Plug.call(opts)
+        |> json_body()
+        |> get_in(["result", "configs"])
+
+      assert listed == []
+    end
+  end
+
   defp push_opts(agent, extra \\ []) do
     plug_opts(agent, [agent_card_opts: [capabilities: %{push_notifications: true}]] ++ extra)
   end
