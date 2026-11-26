@@ -34,6 +34,18 @@ defmodule A2A.Agent.RuntimeTest do
     test "get_task/2 returns error for unknown task", %{pid: pid} do
       assert {:error, :not_found} = A2A.Test.EchoAgent.get_task(pid, "tsk-nonexistent")
     end
+
+    test "call/2 assigns a server-generated contextId when none is supplied", %{pid: pid} do
+      assert {:ok, task} = A2A.Test.EchoAgent.call(pid, Message.new_user("no context"))
+      assert is_binary(task.context_id)
+      assert String.starts_with?(task.context_id, "ctx-")
+    end
+
+    test "call/2 keeps a client-supplied contextId", %{pid: pid} do
+      opts = [context_id: "client-ctx-1"]
+      assert {:ok, task} = A2A.Test.EchoAgent.call(pid, Message.new_user("ctx"), opts)
+      assert task.context_id == "client-ctx-1"
+    end
   end
 
   describe "ErrorAgent runtime" do

@@ -28,6 +28,7 @@ defmodule A2A.Agent.Runtime do
           map()
         ) :: {Task.t() | Message.t(), State.t()}
   def process_message(module, message, context_id, state, metadata \\ %{}, extensions \\ %{}) do
+    context_id = context_id || A2A.ID.generate("ctx")
     task = Task.new(context_id: context_id, metadata: metadata)
     task = %{task | history: [message]}
     run_task(module, message, task, state, extensions)
